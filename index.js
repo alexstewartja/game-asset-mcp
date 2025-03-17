@@ -8,6 +8,10 @@ import { promises as fs } from "fs";
 import path from "path";
 import express from "express";
 import crypto from "crypto";
+import dotenv from "dotenv";
+
+// Load environment variables from .env file
+dotenv.config();
 
 // Logging function
 async function log(message) {
@@ -80,11 +84,44 @@ const TOOLS = {
     }
   }
 };
+// Get authentication credentials from environment variables
+const gradioUsername = process.env.GRADIO_USERNAME;
+const gradioPassword = process.env.GRADIO_PASSWORD;
 
-// Connect to Hugging Face Spaces
-const client2D = await Client.connect("mubarak-alketbi/gokaygokay-Flux-2D-Game-Assets-LoRA");
-const client3D = await Client.connect("mubarak-alketbi/gokaygokay-Flux-Game-Assets-LoRA-v2");
-const clientInstantMesh = await Client.connect("TencentARC/InstantMesh");
+// Authentication options
+const authOptions = gradioUsername && gradioPassword
+  ? { auth: [gradioUsername, gradioPassword] }
+  : {};
+
+// Connect to Hugging Face Spaces with authentication if credentials are provided
+let client2D, client3D, clientInstantMesh;
+
+try {
+  await log("Connecting to 2D asset generation API...");
+  client2D = await Client.connect("mubarak-alketbi/gokaygokay-Flux-2D-Game-Assets-LoRA", authOptions);
+  await log("Successfully connected to 2D asset generation API");
+} catch (error) {
+  await log(`Error connecting to 2D asset generation API: ${error.message}`);
+  throw new Error("Failed to connect to 2D asset generation API. Check your credentials and network connection.");
+}
+
+try {
+  await log("Connecting to 3D asset generation API...");
+  client3D = await Client.connect("mubarak-alketbi/gokaygokay-Flux-Game-Assets-LoRA-v2", authOptions);
+  await log("Successfully connected to 3D asset generation API");
+} catch (error) {
+  await log(`Error connecting to 3D asset generation API: ${error.message}`);
+  throw new Error("Failed to connect to 3D asset generation API. Check your credentials and network connection.");
+}
+
+try {
+  await log("Connecting to InstantMesh API...");
+  clientInstantMesh = await Client.connect("TencentARC/InstantMesh", authOptions);
+  await log("Successfully connected to InstantMesh API");
+} catch (error) {
+  await log(`Error connecting to InstantMesh API: ${error.message}`);
+  throw new Error("Failed to connect to InstantMesh API. Check your credentials and network connection.");
+}
 
 // Register tool list handler
 server.setRequestHandler("tools/list", async () => {

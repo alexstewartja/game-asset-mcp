@@ -134,12 +134,40 @@ If integrated with Claude Desktop (see [Configuration](#configuration)), simply 
 
 ## Configuration
 
-The server is preconfigured to use the current working directory (`process.cwd()`) for saving files. You can customize this and other settings as needed.
+The server offers several configuration options that can be customized to suit your needs.
 
-### Changing the Working Directory
-Modify the `workDir` variable in `index.ts` before compiling:
-```typescript
-const workDir = "/custom/path/to/save/files";
+### Working Directory
+You can specify a custom working directory as a command-line argument:
+```bash
+node index.js /path/to/custom/directory
+```
+If not specified, the current working directory (`process.cwd()`) is used by default.
+
+### Authentication for Hugging Face Spaces
+If the Hugging Face Spaces you're connecting to require authentication, you can provide credentials via environment variables:
+
+1. **Create a `.env` file**: Copy the provided `.env.example` file and rename it to `.env`.
+2. **Set your credentials**:
+   ```
+   GRADIO_USERNAME=your_username_here
+   GRADIO_PASSWORD=your_password_here
+   ```
+
+The server will automatically use these credentials when connecting to the Hugging Face Spaces.
+
+### Transport Mode
+The server supports two transport modes:
+- **StdioServerTransport** (default): For local integration with Claude Desktop.
+- **SSEServerTransport**: For remote access via HTTP.
+
+To use SSE transport, run the server with the `--sse` flag:
+```bash
+node index.js --sse
+```
+
+You can also specify a custom port for the SSE server in your `.env` file:
+```
+PORT=3000
 ```
 
 ### Configuring for Claude Desktop
@@ -256,19 +284,26 @@ See [Configuration](#configuration) for setup instructions.
 ## Troubleshooting
 
 ### Common Issues
-- **API Errors**: 
+- **API Errors**:
   - **Cause**: Network issues or rate limits on Hugging Face Spaces.
   - **Solution**: Check the console logs and retry after a delay.
-- **File Saving Issues**: 
+- **Authentication Errors**:
+  - **Cause**: Incorrect credentials for private Hugging Face Spaces.
+  - **Solution**: Verify your username and password in the `.env` file.
+- **File Saving Issues**:
   - **Cause**: Insufficient permissions in the working directory.
-  - **Solution**: Ensure the directory is writable or change `workDir`.
-- **MCP Connection Failed**: 
+  - **Solution**: Ensure the directory is writable or specify a different working directory.
+- **MCP Connection Failed**:
   - **Cause**: Misconfigured client or server not running.
   - **Solution**: Verify the server is active and the client config is correct.
+- **Rate Limiting**:
+  - **Cause**: Too many requests in a short period.
+  - **Solution**: The server implements rate limiting to prevent abuse. Wait and try again.
 
 ### Debugging Tips
 - The server includes comprehensive logging that outputs timestamps and operation details.
 - Check the console output for detailed logs of each operation.
+- Use the `--sse` flag to run the server with SSE transport for easier debugging with web tools.
 - Test API endpoints manually using tools like `curl` or Postman.
 
 ---
