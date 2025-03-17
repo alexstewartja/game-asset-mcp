@@ -72,6 +72,25 @@ async function logOperation(toolName, operationId, status, details = {}) {
     global.operationUpdates[operationId] = [];
   }
   
+  // Function to notify clients that the resource list has changed
+  async function notifyResourceListChanged() {
+    await log('DEBUG', "Notifying clients of resource list change");
+    await server.notification({ method: "notifications/resources/list_changed" });
+    
+    // For SSE transport, notify all connected clients
+    if (global.transports && global.transports.size > 0) {
+      for (const [clientId, transport] of global.transports) {
+        try {
+          await transport.sendNotification({ method: "notifications/resources/list_changed" });
+          await log('DEBUG', `Sent resource list change notification to client ${clientId}`);
+        } catch (error) {
+          await log('ERROR', `Failed to send notification to client ${clientId}: ${error.message}`);
+        }
+      }
+    }
+  }
+  
+  
   global.operationUpdates[operationId].push({
     status: status,
     details: details,
@@ -137,13 +156,22 @@ async function retryWithBackoff(operation, maxRetries = 3, initialDelay = 5000) 
   }
 }
 
+// Define MCP Error Codes
+const MCP_ERROR_CODES = {
+  InvalidRequest: -32600,
+  MethodNotFound: -32601,
+  InvalidParams: -32602,
+  InternalError: -32603,
+  ParseError: -32700
+};
+
 // Initialize MCP server
 const server = new Server(
   { name: "game-asset-generator", version: "1.0.0" },
   {
     capabilities: {
       tools: { list: true, call: true },
-      resources: { list: true, read: true },
+      resources: { list: true, read: true, listChanged: true }, // Added listChanged capability
       prompts: { list: true, get: true }
     }
   }
@@ -294,9 +322,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error("No image returned from 2D asset generation API");
       }
       
-      // Save the image (which is a Blob)
+      // Save the image (which is a Blob) and notify clients of resource change
       const saveResult = await saveFileFromData(image, "2d_asset", "png", toolName);
       await log('INFO', `2D asset saved at: ${saveResult.filePath}`);
+      
+      // Notify clients that a new resource is available
+      await notifyResourceListChanged();
+      
       return {
         content: [{ type: "text", text: `2D asset available at ${saveResult.resourceUri}` }],
         isError: false
@@ -403,6 +435,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             await log('DEBUG', "Successfully preprocessed image with InstantMesh");
             await log('DEBUG', "Preprocessed data type: " + typeof preprocessResult.data);
             
+            // Save the preprocessed image and notify clients of resource change
             // Save the preprocessed image
             const processedResult = await saveFileFromData(
               preprocessResult.data,
@@ -413,6 +446,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const processedImagePath = processedResult.filePath;
             await log('INFO', `Preprocessed image saved at: ${processedImagePath}`);
             await logOperation(toolName, operationId, 'PROCESSING', { step: 'Preprocessing complete', path: processedImagePath });
+            
+            // Notify clients that a new resource is available
+            await notifyResourceListChanged();
             
             // 2.3: Generate multi-views
             await log('DEBUG', "Generating multi-views...");
@@ -433,6 +469,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             await log('DEBUG', "Successfully generated multi-view image");
             await log('DEBUG', "Multi-view data type: " + typeof mvsResult.data);
             
+            // Save the multi-view image and notify clients of resource change
             // Save the multi-view image
             const mvsResult2 = await saveFileFromData(
               mvsResult.data,
@@ -443,6 +480,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const mvsImagePath = mvsResult2.filePath;
             await log('INFO', `Multi-view image saved at: ${mvsImagePath}`);
             await logOperation(toolName, operationId, 'PROCESSING', { step: 'Multi-view generation complete', path: mvsImagePath });
+            
+            // Notify clients that a new resource is available
+            await notifyResourceListChanged();
             
             // 2.4: Generate 3D models (OBJ and GLB)
             await log('DEBUG', "Generating 3D models...");
@@ -471,11 +511,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const glbModelData = modelResult.data[1];
             
             // Save both model formats
+            // Save both model formats
+            // Save both model formats and notify clients of resource changes
             const objResult = await saveFileFromData(objModelData, "3d_model", "obj", toolName);
             await log('INFO', `OBJ model saved at: ${objResult.filePath}`);
             
+            // Notify clients that a new resource is available
+            await notifyResourceListChanged();
+            
             const glbResult = await saveFileFromData(glbModelData, "3d_model", "glb", toolName);
             await log('INFO', `GLB model saved at: ${glbResult.filePath}`);
+            
+            // Notify clients that a new resource is available
+            await notifyResourceListChanged();
             
             // Create a completion message with detailed information
             const completionMessage = `3D asset generation complete (Operation ID: ${operationId}).\n\n` +
@@ -537,12 +585,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    throw new Error(`Unknown tool: ${toolName}`);
+    throw {
+      code: MCP_ERROR_CODES.MethodNotFound,
+      message: `Unknown tool: ${toolName}`
+    };
   } catch (error) {
-    await log('ERROR', `Error in ${toolName}: ${error.message}`);
+    // Handle different types of errors with appropriate MCP error codes
+    let errorCode = MCP_ERROR_CODES.InternalError;
+    let errorMessage = error.message || "Unknown error";
+    
+    if (error.code) {
+      // If the error already has a code, use it
+      errorCode = error.code;
+      errorMessage = error.message;
+    } else if (error instanceof z.ZodError) {
+      // Validation errors
+      errorCode = MCP_ERROR_CODES.InvalidParams;
+      errorMessage = `Invalid parameters: ${error.errors.map(e => e.message).join(", ")}`;
+    }
+    
+    await log('ERROR', `Error in ${toolName}: ${errorMessage} (Code: ${errorCode})`);
     return {
-      content: [{ type: "text", text: `Error: ${error.message}` }],
-      isError: true
+      content: [{ type: "text", text: `Error: ${errorMessage}` }],
+      isError: true,
+      errorCode: errorCode
     };
   }
 });
@@ -866,34 +932,74 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
   };
 });
 
+// Define Zod schemas for prompt argument validation
+const promptSchema2D = z.object({
+  prompt: z.string().min(1).max(500).transform(val => sanitizePrompt(val))
+});
+
+const promptSchema3D = z.object({
+  prompt: z.string().min(1).max(500).transform(val => sanitizePrompt(val))
+});
+
 server.setRequestHandler(GetPromptRequestSchema, async (request) => {
   const promptName = request.params.name;
+  const args = request.params.arguments;
   
-  if (promptName === "generate_2d_sprite") {
-    return {
-      description: "Generate a 2D sprite",
-      messages: [
-        {
-          role: "user",
-          content: { type: "text", text: `Generate a 2D sprite: ${request.params.arguments.prompt}, high detailed, complete object, not cut off, white solid background` }
-        }
-      ]
+  try {
+    if (promptName === "generate_2d_sprite") {
+      // Validate arguments using Zod schema
+      const { prompt } = promptSchema2D.parse(args);
+      
+      return {
+        description: "Generate a 2D sprite",
+        messages: [
+          {
+            role: "user",
+            content: { type: "text", text: `Generate a 2D sprite: ${prompt}, high detailed, complete object, not cut off, white solid background` }
+          }
+        ]
+      };
+    }
+    
+    if (promptName === "generate_3d_model") {
+      // Validate arguments using Zod schema
+      const { prompt } = promptSchema3D.parse(args);
+      
+      return {
+        description: "Generate a 3D model",
+        messages: [
+          {
+            role: "user",
+            content: { type: "text", text: `Generate a 3D model: ${prompt}, high detailed, complete object, not cut off, white solid background` }
+          }
+        ]
+      };
+    }
+    
+    // If prompt not found, throw an error with MCP error code
+    throw {
+      code: MCP_ERROR_CODES.MethodNotFound,
+      message: `Prompt not found: ${promptName}`
     };
+  } catch (error) {
+    // Handle different types of errors
+    if (error.code) {
+      // If the error already has a code, rethrow it
+      throw error;
+    } else if (error instanceof z.ZodError) {
+      // Validation errors
+      throw {
+        code: MCP_ERROR_CODES.InvalidParams,
+        message: `Invalid arguments: ${error.errors.map(e => e.message).join(", ")}`
+      };
+    } else {
+      // Other errors
+      throw {
+        code: MCP_ERROR_CODES.InternalError,
+        message: `Internal error: ${error.message}`
+      };
+    }
   }
-  
-  if (promptName === "generate_3d_model") {
-    return {
-      description: "Generate a 3D model",
-      messages: [
-        {
-          role: "user",
-          content: { type: "text", text: `Generate a 3D model: ${request.params.arguments.prompt}, high detailed, complete object, not cut off, white solid background` }
-        }
-      ]
-    };
-  }
-  
-  throw new Error("Prompt not found");
 });
 
 // Start the server
@@ -908,7 +1014,17 @@ async function main() {
     const port = process.env.PORT || 3000;
     
     // Store transports by client ID for multi-connection support
-    const transports = new Map();
+    global.transports = new Map();
+    
+    // Add health check endpoint
+    app.get("/health", (req, res) => {
+      res.status(200).json({
+        status: "ok",
+        timestamp: new Date().toISOString(),
+        version: "1.0.0",
+        uptime: process.uptime()
+      });
+    });
     
     app.get("/sse", async (req, res) => {
       const clientId = req.query.clientId || crypto.randomUUID();
@@ -921,11 +1037,11 @@ async function main() {
       
       // Create a new transport for this client
       const transport = new SSEServerTransport("/messages", res);
-      transports.set(clientId, transport);
+      global.transports.set(clientId, transport);
       
       // Handle client disconnect
       req.on('close', () => {
-        transports.delete(clientId);
+        global.transports.delete(clientId);
         log('INFO', `Client ${clientId} disconnected`);
       });
       
@@ -945,7 +1061,7 @@ async function main() {
       }
       
       // Get the transport for this client
-      const transport = transports.get(clientId);
+      const transport = global.transports.get(clientId);
       if (!transport) {
         res.status(404).json({ error: "Client not connected" });
         return;
@@ -1000,6 +1116,16 @@ async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
     await log('INFO', "MCP Game Asset Generator running with stdio transport");
+    
+    // Add health check handler for stdio transport
+    server.setRequestHandler(z.object({ method: z.literal("health/check") }), async () => {
+      return {
+        status: "ok",
+        timestamp: new Date().toISOString(),
+        version: "1.0.0",
+        uptime: process.uptime()
+      };
+    });
   }
 }
 
