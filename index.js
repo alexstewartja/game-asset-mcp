@@ -9,7 +9,8 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
-  GetPromptRequestSchema
+  GetPromptRequestSchema,
+  ListResourceTemplatesRequestSchema
 } from "@modelcontextprotocol/sdk/types.js";
 import { Client } from "@gradio/client";
 import { promises as fs } from "fs";
@@ -23,10 +24,32 @@ import https from "https";
 // Load environment variables from .env file
 dotenv.config();
 
-// Logging function
-async function log(message) {
+// Allow working directory to be specified via command-line argument
+const workDir = process.argv[2] || process.cwd();
+
+// Logging function with file output
+async function log(level = 'INFO', message) {
+  // If only one parameter is provided, assume it's the message
+  if (!message) {
+    message = level;
+    level = 'INFO';
+  }
+  
   const timestamp = new Date().toISOString();
-  console.error(`[INFO] ${timestamp} - ${message}`);
+  const logMessage = `[${level.toUpperCase()}] ${timestamp} - ${message}\n`;
+  
+  // Log to console
+  console.error(logMessage.trim());
+  
+  // Log to file
+  try {
+    const logDir = path.join(workDir, 'logs');
+    await fs.mkdir(logDir, { recursive: true });
+    const logFile = path.join(logDir, 'server.log');
+    await fs.appendFile(logFile, logMessage);
+  } catch (err) {
+    console.error(`Failed to write to log file: ${err}`);
+  }
 }
 
 // Initialize MCP server
@@ -40,8 +63,7 @@ const server = new Server(
     }
   }
 );
-// Allow working directory to be specified via command-line argument
-const workDir = process.argv[2] || process.cwd();
+// Create working directory if it doesn't exist
 await fs.mkdir(workDir, { recursive: true });
 
 // Create a dedicated assets directory
@@ -122,29 +144,29 @@ const authOptions = gradioUsername && gradioPassword
 let client2D, client3D, clientInstantMesh;
 
 try {
-  await log("Connecting to 2D asset generation API...");
+  await log('INFO', "Connecting to 2D asset generation API...");
   client2D = await Client.connect("mubarak-alketbi/gokaygokay-Flux-2D-Game-Assets-LoRA", authOptions);
-  await log("Successfully connected to 2D asset generation API");
+  await log('INFO', "Successfully connected to 2D asset generation API");
 } catch (error) {
-  await log(`Error connecting to 2D asset generation API: ${error.message}`);
+  await log('ERROR', `Error connecting to 2D asset generation API: ${error.message}`);
   throw new Error("Failed to connect to 2D asset generation API. Check your credentials and network connection.");
 }
 
 try {
-  await log("Connecting to 3D asset generation API...");
+  await log('INFO', "Connecting to 3D asset generation API...");
   client3D = await Client.connect("mubarak-alketbi/gokaygokay-Flux-Game-Assets-LoRA-v2", authOptions);
-  await log("Successfully connected to 3D asset generation API");
+  await log('INFO', "Successfully connected to 3D asset generation API");
 } catch (error) {
-  await log(`Error connecting to 3D asset generation API: ${error.message}`);
+  await log('ERROR', `Error connecting to 3D asset generation API: ${error.message}`);
   throw new Error("Failed to connect to 3D asset generation API. Check your credentials and network connection.");
 }
 
 try {
-  await log("Connecting to InstantMesh API...");
+  await log('INFO', "Connecting to InstantMesh API...");
   clientInstantMesh = await Client.connect("TencentARC/InstantMesh", authOptions);
-  await log("Successfully connected to InstantMesh API");
+  await log('INFO', "Successfully connected to InstantMesh API");
 } catch (error) {
-  await log(`Error connecting to InstantMesh API: ${error.message}`);
+  await log('ERROR', `Error connecting to InstantMesh API: ${error.message}`);
   throw new Error("Failed to connect to InstantMesh API. Check your credentials and network connection.");
 }
 
@@ -160,196 +182,159 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const toolName = request.params.name;
   const args = request.params.arguments;
 
-  await log(`Calling tool: ${toolName}`);
+  await log('INFO', `Calling tool: ${toolName}`);
 
   try {
     if (toolName === TOOLS.GENERATE_2D_ASSET.name) {
-      // Validate input using Zod schema
-      try {
-        const { prompt } = schema2D.parse(args);
-        if (!prompt) {
-          throw new Error("Invalid or empty prompt");
-        }
-
-        await log(`Generating 2D asset with prompt: "${prompt}"`);
-      } catch (validationError) {
-        throw new Error(`Validation error: ${validationError.message}`);
+      const { prompt } = schema2D.parse(args);
+      if (!prompt) {
+        throw new Error("Invalid or empty prompt");
       }
-      try {
-        // Generate 2D asset using the correct predict method and parameters
-        // Note: The API docs show null as parameter, but we're assuming prompt is needed
-        // This may need adjustment based on actual API behavior
-        const apiResult = await client2D.predict("/predict", [prompt]);
-        
-        if (!apiResult || !apiResult.data || !apiResult.data.length) {
-          throw new Error("No data returned from 2D asset generation API");
-        }
-        
-        // Handle the response data - extract URL or blob
-        const imageData = apiResult.data[0];
-        let imageUrl;
-        
-        if (typeof imageData === 'object' && imageData.url) {
-          imageUrl = imageData.url;
-        } else if (typeof imageData === 'string' && imageData.startsWith('http')) {
-          imageUrl = imageData;
-        } else {
-          // If it's not a URL, it might be raw data
-          const saveResult = await saveFileFromData(imageData, "2d_asset", "png", toolName);
-          await log(`2D asset saved at: ${saveResult.filePath}`);
-          return {
-            content: [{ type: "text", text: `2D asset available at ${saveResult.resourceUri}` }],
-            isError: false
-          };
-        }
-        
-        // If we got a URL, save it
-        const saveResult = await saveFileFromUrl(imageUrl, "2d_asset", "png", toolName);
-        await log(`2D asset saved at: ${saveResult.filePath}`);
+      await log('INFO', `Generating 2D asset with prompt: "${prompt}"`);
+      
+      const apiResult = await client2D.predict("/predict", [prompt]);
+      if (!apiResult || !apiResult.data || !apiResult.data.length) {
+        throw new Error("No data returned from 2D asset generation API");
+      }
+      
+      const imageData = apiResult.data[0];
+      let imageUrl;
+      if (typeof imageData === 'object' && imageData.url) {
+        imageUrl = imageData.url;
+      } else if (typeof imageData === 'string' && imageData.startsWith('http')) {
+        imageUrl = imageData;
+      } else {
+        const saveResult = await saveFileFromData(imageData, "2d_asset", "png", toolName);
+        await log('INFO', `2D asset saved at: ${saveResult.filePath}`);
         return {
           content: [{ type: "text", text: `2D asset available at ${saveResult.resourceUri}` }],
           isError: false
         };
-      } catch (error) {
-        await log(`Error generating 2D asset: ${error.message}`);
-        throw new Error(`2D asset generation failed: ${error.message}`);
       }
+      
+      const saveResult = await saveFileFromUrl(imageUrl, "2d_asset", "png", toolName);
+      await log('INFO', `2D asset saved at: ${saveResult.filePath}`);
+      return {
+        content: [{ type: "text", text: `2D asset available at ${saveResult.resourceUri}` }],
+        isError: false
+      };
     }
 
     if (toolName === TOOLS.GENERATE_3D_ASSET.name) {
-      // Validate input using Zod schema
-      try {
-        const { prompt } = schema3D.parse(args);
-        if (!prompt) {
-          throw new Error("Invalid or empty prompt");
-        }
-
-        await log(`Generating 3D asset with prompt: "${prompt}"`);
-      } catch (validationError) {
-        throw new Error(`Validation error: ${validationError.message}`);
+      const { prompt } = schema3D.parse(args);
+      if (!prompt) {
+        throw new Error("Invalid or empty prompt");
+      }
+      await log('INFO', `Generating 3D asset with prompt: "${prompt}"`);
+      
+      const imageResult = await client3D.predict("/predict", [prompt]);
+      if (!imageResult || !imageResult.data || !imageResult.data.length) {
+        throw new Error("No data returned from 3D image generation API");
       }
       
-      try {
-        // Step 1: Generate 3D asset image using the correct predict method
-        const imageResult = await client3D.predict("/predict", [prompt]);
-        
-        if (!imageResult || !imageResult.data || !imageResult.data.length) {
-          throw new Error("No data returned from 3D image generation API");
-        }
-        
-        // Handle the response data - extract URL or blob
-        const imageData = imageResult.data[0];
-        let imagePath;
-        
-        if (typeof imageData === 'object' && imageData.url) {
-          const imageUrl = imageData.url;
-          const saveResult = await saveFileFromUrl(imageUrl, "3d_image", "png", toolName);
-          imagePath = saveResult.filePath;
-        } else if (typeof imageData === 'string' && imageData.startsWith('http')) {
-          const saveResult = await saveFileFromUrl(imageData, "3d_image", "png", toolName);
-          imagePath = saveResult.filePath;
-        } else {
-          // If it's not a URL, it might be raw data
-          const saveResult = await saveFileFromData(imageData, "3d_image", "png", toolName);
-          imagePath = saveResult.filePath;
-        }
-        
-        await log(`3D image generated at: ${imagePath}`);
-        
-        // Step 2: Process the image with InstantMesh using the correct multi-step process
-        
-        // 2.1: Check if the image is valid
-        await log("Validating image for 3D conversion...");
-        const imageFile = await fs.readFile(imagePath);
-        const checkResult = await clientInstantMesh.predict("/check_input_image", [
-          new File([imageFile], path.basename(imagePath), { type: "image/png" })
-        ]);
-        
-        // 2.2: Preprocess the image (with background removal)
-        await log("Preprocessing image...");
-        const preprocessResult = await clientInstantMesh.predict("/preprocess", [
-          new File([imageFile], path.basename(imagePath), { type: "image/png" }),
-          true // Remove background
-        ]);
-        
-        if (!preprocessResult || !preprocessResult.data) {
-          throw new Error("Image preprocessing failed");
-        }
-        
-        // Save the preprocessed image
-        const processedResult = await saveFileFromData(
-          preprocessResult.data,
-          "3d_processed",
-          "png",
-          toolName
-        );
-        const processedImagePath = processedResult.filePath;
-        await log(`Preprocessed image saved at: ${processedImagePath}`);
-        
-        // 2.3: Generate multi-views
-        await log("Generating multi-views...");
-        const processedImageFile = await fs.readFile(processedImagePath);
-        const mvsResult = await clientInstantMesh.predict("/generate_mvs", [
-          new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
-          50, // Sample steps (between 30 and 75)
-          42  // Seed value
-        ]);
-        
-        if (!mvsResult || !mvsResult.data) {
-          throw new Error("Multi-view generation failed");
-        }
-        
-        // Save the multi-view image
-        const mvsResult2 = await saveFileFromData(
-          mvsResult.data,
-          "3d_multiview",
-          "png",
-          toolName
-        );
-        const mvsImagePath = mvsResult2.filePath;
-        await log(`Multi-view image saved at: ${mvsImagePath}`);
-        
-        // 2.4: Generate 3D models (OBJ and GLB)
-        await log("Generating 3D models...");
-        const modelResult = await clientInstantMesh.predict("/make3d", []);
-        
-        if (!modelResult || !modelResult.data || !modelResult.data.length) {
-          throw new Error("3D model generation failed");
-        }
-        
-        // The API returns both OBJ and GLB formats
-        const objModelData = modelResult.data[0];
-        const glbModelData = modelResult.data[1];
-        
-        // Save both model formats
-        const objResult = await saveFileFromData(objModelData, "3d_model", "obj", toolName);
-        await log(`OBJ model saved at: ${objResult.filePath}`);
-        
-        const glbResult = await saveFileFromData(glbModelData, "3d_model", "glb", toolName);
-        await log(`GLB model saved at: ${glbResult.filePath}`);
-        
-        return {
-          content: [
-            { type: "text", text: `3D models available at:\nOBJ: ${objResult.resourceUri}\nGLB: ${glbResult.resourceUri}` }
-          ],
-          isError: false
-        };
-      } catch (error) {
-        await log(`Error generating 3D asset: ${error.message}`);
-        throw new Error(`3D asset generation failed: ${error.message}`);
+      const imageData = imageResult.data[0];
+      let imagePath;
+      if (typeof imageData === 'object' && imageData.url) {
+        const saveResult = await saveFileFromUrl(imageData.url, "3d_image", "png", toolName);
+        imagePath = saveResult.filePath;
+      } else if (typeof imageData === 'string' && imageData.startsWith('http')) {
+        const saveResult = await saveFileFromUrl(imageData, "3d_image", "png", toolName);
+        imagePath = saveResult.filePath;
+      } else {
+        const saveResult = await saveFileFromData(imageData, "3d_image", "png", toolName);
+        imagePath = saveResult.filePath;
       }
+      await log('INFO', `3D image generated at: ${imagePath}`);
+      
+      // Step 2: Process the image with InstantMesh using the correct multi-step process
+      
+      // 2.1: Check if the image is valid
+      await log('DEBUG', "Validating image for 3D conversion...");
+      const imageFile = await fs.readFile(imagePath);
+      const checkResult = await clientInstantMesh.predict("/check_input_image", [
+        new File([imageFile], path.basename(imagePath), { type: "image/png" })
+      ]);
+      
+      // 2.2: Preprocess the image (with background removal)
+      await log('DEBUG', "Preprocessing image...");
+      const preprocessResult = await clientInstantMesh.predict("/preprocess", [
+        new File([imageFile], path.basename(imagePath), { type: "image/png" }),
+        true // Remove background
+      ]);
+      
+      if (!preprocessResult || !preprocessResult.data) {
+        throw new Error("Image preprocessing failed");
+      }
+      
+      // Save the preprocessed image
+      const processedResult = await saveFileFromData(
+        preprocessResult.data,
+        "3d_processed",
+        "png",
+        toolName
+      );
+      const processedImagePath = processedResult.filePath;
+      await log('INFO', `Preprocessed image saved at: ${processedImagePath}`);
+      
+      // 2.3: Generate multi-views
+      await log('DEBUG', "Generating multi-views...");
+      const processedImageFile = await fs.readFile(processedImagePath);
+      const mvsResult = await clientInstantMesh.predict("/generate_mvs", [
+        new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
+        50, // Sample steps (between 30 and 75)
+        42  // Seed value
+      ]);
+      
+      if (!mvsResult || !mvsResult.data) {
+        throw new Error("Multi-view generation failed");
+      }
+      
+      // Save the multi-view image
+      const mvsResult2 = await saveFileFromData(
+        mvsResult.data,
+        "3d_multiview",
+        "png",
+        toolName
+      );
+      const mvsImagePath = mvsResult2.filePath;
+      await log('INFO', `Multi-view image saved at: ${mvsImagePath}`);
+      
+      // 2.4: Generate 3D models (OBJ and GLB)
+      await log('DEBUG', "Generating 3D models...");
+      const modelResult = await clientInstantMesh.predict("/make3d", []);
+      
+      if (!modelResult || !modelResult.data || !modelResult.data.length) {
+        throw new Error("3D model generation failed");
+      }
+      
+      // The API returns both OBJ and GLB formats
+      const objModelData = modelResult.data[0];
+      const glbModelData = modelResult.data[1];
+      
+      // Save both model formats
+      const objResult = await saveFileFromData(objModelData, "3d_model", "obj", toolName);
+      await log('INFO', `OBJ model saved at: ${objResult.filePath}`);
+      
+      const glbResult = await saveFileFromData(glbModelData, "3d_model", "glb", toolName);
+      await log('INFO', `GLB model saved at: ${glbResult.filePath}`);
+      
+      return {
+        content: [
+          { type: "text", text: `3D models available at:\nOBJ: ${objResult.resourceUri}\nGLB: ${glbResult.resourceUri}` }
+        ],
+        isError: false
+      };
     }
 
     throw new Error(`Unknown tool: ${toolName}`);
   } catch (error) {
-    await log(`Error in ${toolName}: ${error.message}`);
+    await log('ERROR', `Error in ${toolName}: ${error.message}`);
     return {
       content: [{ type: "text", text: `Error: ${error.message}` }],
       isError: true
     };
   }
 });
-
 // Helper function to sanitize prompts
 function sanitizePrompt(prompt) {
   if (!prompt || typeof prompt !== 'string') {
@@ -419,7 +404,7 @@ async function saveFileFromUrl(url, prefix, ext, toolName) {
       resourceUri: `asset://${filename}`
     };
   } catch (error) {
-    await log(`Error saving file from URL: ${error.message}`);
+    await log('ERROR', `Error saving file from URL: ${error.message}`);
     throw new Error("Failed to save file from URL");
   }
 }
@@ -469,14 +454,14 @@ async function saveFileFromData(data, prefix, ext, toolName) {
       resourceUri: `asset://${filename}`
     };
   } catch (error) {
-    await log(`Error saving file from data: ${error.message}`);
+    await log('ERROR', `Error saving file from data: ${error.message}`);
     throw new Error("Failed to save file from data");
   }
 }
 
 // Resource listing (for file management)
 server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
-  await log("Listing resources");
+  await log('INFO', "Listing resources");
   
   try {
     // Check if there's a filter in the request
@@ -487,7 +472,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
       const templateMatch = uriTemplate.match(/^asset:\/\/([^\/]+)\/.*$/);
       if (templateMatch) {
         typeFilter = templateMatch[1];
-        await log(`Filtering resources by type: ${typeFilter}`);
+        await log('INFO', `Filtering resources by type: ${typeFilter}`);
       }
     }
     
@@ -524,7 +509,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
     
     return { resources: filteredResources };
   } catch (error) {
-    await log(`Error listing resources: ${error.message}`);
+    await log('ERROR', `Error listing resources: ${error.message}`);
     return { resources: [] };
   }
 });
@@ -532,7 +517,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
 // Resource read handler
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const uri = request.params.uri;
-  await log(`Reading resource: ${uri}`);
+  await log('INFO', `Reading resource: ${uri}`);
   
   if (uri.startsWith("asset://")) {
     // Parse the URI to handle templated URIs
@@ -574,7 +559,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         }]
       };
     } catch (error) {
-      await log(`Error reading resource: ${error.message}`);
+      await log('ERROR', `Error reading resource: ${error.message}`);
       return {
         content: [{ type: "text", text: "Error reading resource" }],
         isError: true
@@ -583,6 +568,19 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   }
   
   throw new Error("Unsupported URI scheme");
+});
+
+// Resource templates handler
+server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+  return {
+    templates: [
+      {
+        uriTemplate: "asset://{type}/{id}",
+        name: "Generated Asset",
+        description: "Filter assets by type and ID"
+      }
+    ]
+  };
 });
 
 // Prompt handlers
@@ -649,7 +647,7 @@ async function main() {
     
     app.get("/sse", async (req, res) => {
       const clientId = req.query.clientId || crypto.randomUUID();
-      await log(`SSE connection established for client: ${clientId}`);
+      await log('INFO', `SSE connection established for client: ${clientId}`);
       
       // Set headers for SSE
       res.setHeader('Content-Type', 'text/event-stream');
@@ -663,7 +661,7 @@ async function main() {
       // Handle client disconnect
       req.on('close', () => {
         transports.delete(clientId);
-        log(`Client ${clientId} disconnected`);
+        log('INFO', `Client ${clientId} disconnected`);
       });
       
       await server.connect(transport);
@@ -707,36 +705,36 @@ async function main() {
         try {
           key = await fs.readFile(keyPath);
           cert = await fs.readFile(certPath);
-          await log("Using existing SSL certificates");
+          await log('INFO', "Using existing SSL certificates");
         } catch (error) {
-          await log("SSL certificates not found, please create them manually");
-          await log("You can generate self-signed certificates with:");
-          await log("openssl req -x509 -newkey rsa:4096 -keyout ssl/key.pem -out ssl/cert.pem -days 365 -nodes");
+          await log('WARN', "SSL certificates not found, please create them manually");
+          await log('INFO', "You can generate self-signed certificates with:");
+          await log('INFO', "openssl req -x509 -newkey rsa:4096 -keyout ssl/key.pem -out ssl/cert.pem -days 365 -nodes");
           throw new Error("SSL certificates required for HTTPS");
         }
         
         const httpsServer = https.createServer({ key, cert }, app);
         httpsServer.listen(port, () => {
-          log(`MCP Game Asset Generator running with HTTPS SSE transport on port ${port}`);
+          log('INFO', `MCP Game Asset Generator running with HTTPS SSE transport on port ${port}`);
         });
       } catch (error) {
-        await log(`HTTPS setup failed: ${error.message}`);
-        await log("Falling back to HTTP");
+        await log('ERROR', `HTTPS setup failed: ${error.message}`);
+        await log('WARN', "Falling back to HTTP");
         app.listen(port, () => {
-          log(`MCP Game Asset Generator running with HTTP SSE transport on port ${port}`);
+          log('INFO', `MCP Game Asset Generator running with HTTP SSE transport on port ${port}`);
         });
       }
     } else {
       // Standard HTTP server
       app.listen(port, () => {
-        log(`MCP Game Asset Generator running with HTTP SSE transport on port ${port}`);
+        log('INFO', `MCP Game Asset Generator running with HTTP SSE transport on port ${port}`);
       });
     }
   } else {
     // Use stdio transport for local access (e.g., Claude Desktop)
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    await log("MCP Game Asset Generator running with stdio transport");
+    await log('INFO', "MCP Game Asset Generator running with stdio transport");
   }
 }
 
