@@ -58,6 +58,24 @@ let operationCounter = 0;
 // Global object to store operation updates that can be accessed by clients
 global.operationUpdates = {};
 
+// Function to notify clients that the resource list has changed
+async function notifyResourceListChanged() {
+  await log('DEBUG', "Notifying clients of resource list change");
+  await server.notification({ method: "notifications/resources/list_changed" });
+  
+  // For SSE transport, notify all connected clients
+  if (global.transports && global.transports.size > 0) {
+    for (const [clientId, transport] of global.transports) {
+      try {
+        await transport.sendNotification({ method: "notifications/resources/list_changed" });
+        await log('DEBUG', `Sent resource list change notification to client ${clientId}`);
+      } catch (error) {
+        await log('ERROR', `Failed to send notification to client ${clientId}: ${error.message}`);
+      }
+    }
+  }
+}
+
 async function logOperation(toolName, operationId, status, details = {}) {
   const level = status === 'ERROR' ? 'ERROR' : 'INFO';
   const detailsStr = Object.entries(details)
@@ -71,25 +89,6 @@ async function logOperation(toolName, operationId, status, details = {}) {
   if (!global.operationUpdates[operationId]) {
     global.operationUpdates[operationId] = [];
   }
-  
-  // Function to notify clients that the resource list has changed
-  async function notifyResourceListChanged() {
-    await log('DEBUG', "Notifying clients of resource list change");
-    await server.notification({ method: "notifications/resources/list_changed" });
-    
-    // For SSE transport, notify all connected clients
-    if (global.transports && global.transports.size > 0) {
-      for (const [clientId, transport] of global.transports) {
-        try {
-          await transport.sendNotification({ method: "notifications/resources/list_changed" });
-          await log('DEBUG', `Sent resource list change notification to client ${clientId}`);
-        } catch (error) {
-          await log('ERROR', `Failed to send notification to client ${clientId}: ${error.message}`);
-        }
-      }
-    }
-  }
-  
   
   global.operationUpdates[operationId].push({
     status: status,
