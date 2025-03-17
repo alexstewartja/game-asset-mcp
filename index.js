@@ -32,9 +32,9 @@ const server = new Server(
   { name: "game-asset-generator", version: "1.0.0" },
   {
     capabilities: {
-      tools: true,
+      tools: { list: true, call: true },
       resources: { list: true, read: true },
-      prompts: true
+      prompts: { list: true, get: true }
     }
   }
 );
