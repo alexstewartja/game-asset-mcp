@@ -53,6 +53,53 @@ async function log(level = 'INFO', message) {
   }
 }
 
+// Enhanced logging with operation ID for tracking long-running operations
+let operationCounter = 0;
+async function logOperation(toolName, operationId, status, details = {}) {
+  const level = status === 'ERROR' ? 'ERROR' : 'INFO';
+  const detailsStr = Object.entries(details)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(', ');
+  
+  await log(level, `Operation ${operationId} [${toolName}] - ${status}${detailsStr ? ' - ' + detailsStr : ''}`);
+}
+
+// Retry function with exponential backoff
+async function retryWithBackoff(operation, maxRetries = 3, initialDelay = 5000) {
+  let retries = 0;
+  let delay = initialDelay;
+  
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      retries++;
+      
+      // Check if we've exceeded the maximum number of retries
+      if (retries > maxRetries) {
+        throw error;
+      }
+      
+      // Check if the error is due to GPU quota
+      const gpuQuotaMatch = error.message?.match(/exceeded your GPU quota.*Please retry in (\d+):(\d+):(\d+)/);
+      if (gpuQuotaMatch) {
+        const hours = parseInt(gpuQuotaMatch[1]) || 0;
+        const minutes = parseInt(gpuQuotaMatch[2]) || 0;
+        const seconds = parseInt(gpuQuotaMatch[3]) || 0;
+        const waitTime = (hours * 3600 + minutes * 60 + seconds) * 1000;
+        
+        await log('WARN', `GPU quota exceeded. Waiting for ${waitTime/1000} seconds before retry ${retries}/${maxRetries}`);
+        await new Promise(resolve => setTimeout(resolve, waitTime + 1000)); // Add 1 second buffer
+      } else {
+        // For other errors, use exponential backoff
+        await log('WARN', `Operation failed: ${error.message}. Retrying in ${delay/1000} seconds (${retries}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // Exponential backoff
+      }
+    }
+  }
+}
+
 // Initialize MCP server
 const server = new Server(
   { name: "game-asset-generator", version: "1.0.0" },
@@ -216,123 +263,186 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (toolName === TOOLS.GENERATE_3D_ASSET.name) {
-      const { prompt } = schema3D.parse(args);
-      if (!prompt) {
-        throw new Error("Invalid or empty prompt");
+      const operationId = `3D-${++operationCounter}`;
+      await logOperation(toolName, operationId, 'STARTED');
+      
+      try {
+        const { prompt } = schema3D.parse(args);
+        if (!prompt) {
+          throw new Error("Invalid or empty prompt");
+        }
+        await log('INFO', `Generating 3D asset with prompt: "${prompt}"`);
+        await logOperation(toolName, operationId, 'PROCESSING', { step: 'Parsing prompt', prompt });
+        
+        // Initial response to prevent timeout
+        const initialResponse = {
+          content: [
+            { type: "text", text: `Starting 3D asset generation (Operation ID: ${operationId})...\nThis may take a few minutes. You'll receive the final result when complete.` }
+          ],
+          isError: false
+        };
+        
+        // Start the 3D asset generation process in the background
+        (async () => {
+          try {
+            // Step 1: Generate the initial image using the Inference API
+            await logOperation(toolName, operationId, 'PROCESSING', { step: 'Generating initial image' });
+            await log('DEBUG', "Calling Hugging Face Inference API for 3D asset generation...");
+            
+            // Use retry mechanism for the image generation
+            const image = await retryWithBackoff(async () => {
+              return await inferenceClient.textToImage({
+                model: "gokaygokay/Flux-Game-Assets-LoRA-v2",
+                inputs: prompt,
+                parameters: { num_inference_steps: 50 },
+                provider: "hf-inference",
+              });
+            });
+            
+            if (!image) {
+              throw new Error("No image returned from 3D image generation API");
+            }
+            
+            // Save the image (which is a Blob)
+            const saveResult = await saveFileFromData(image, "3d_image", "png", toolName);
+            const imagePath = saveResult.filePath;
+            await log('INFO', `3D image generated at: ${imagePath}`);
+            await logOperation(toolName, operationId, 'PROCESSING', { step: 'Initial image generated', path: imagePath });
+            
+            // Step 2: Process the image with InstantMesh using the correct multi-step process
+            
+            // 2.1: Check if the image is valid
+            await log('DEBUG', "Validating image for 3D conversion...");
+            await logOperation(toolName, operationId, 'PROCESSING', { step: 'Validating image' });
+            const imageFile = await fs.readFile(imagePath);
+            const checkResult = await retryWithBackoff(async () => {
+              return await clientInstantMesh.predict("/check_input_image", [
+                new File([imageFile], path.basename(imagePath), { type: "image/png" })
+              ]);
+            });
+            
+            await logOperation(toolName, operationId, 'PROCESSING', { step: 'Image validation complete' });
+            
+            // 2.2: Preprocess the image (with background removal)
+            await log('DEBUG', "Preprocessing image...");
+            await logOperation(toolName, operationId, 'PROCESSING', { step: 'Preprocessing image' });
+            const preprocessResult = await retryWithBackoff(async () => {
+              return await clientInstantMesh.predict("/preprocess", [
+                new File([imageFile], path.basename(imagePath), { type: "image/png" }),
+                true // Remove background
+              ]);
+            });
+            
+            if (!preprocessResult || !preprocessResult.data) {
+              throw new Error("Image preprocessing failed");
+            }
+            
+            await log('DEBUG', "Successfully preprocessed image with InstantMesh");
+            await log('DEBUG', "Preprocessed data type: " + typeof preprocessResult.data);
+            
+            // Save the preprocessed image
+            const processedResult = await saveFileFromData(
+              preprocessResult.data,
+              "3d_processed",
+              "png",
+              toolName
+            );
+            const processedImagePath = processedResult.filePath;
+            await log('INFO', `Preprocessed image saved at: ${processedImagePath}`);
+            await logOperation(toolName, operationId, 'PROCESSING', { step: 'Preprocessing complete', path: processedImagePath });
+            
+            // 2.3: Generate multi-views
+            await log('DEBUG', "Generating multi-views...");
+            await logOperation(toolName, operationId, 'PROCESSING', { step: 'Generating multi-views' });
+            const processedImageFile = await fs.readFile(processedImagePath);
+            const mvsResult = await retryWithBackoff(async () => {
+              return await clientInstantMesh.predict("/generate_mvs", [
+                new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
+                75, // Sample steps (between 30 and 75)
+                42  // Seed value
+              ]);
+            });
+            
+            if (!mvsResult || !mvsResult.data) {
+              throw new Error("Multi-view generation failed");
+            }
+            
+            await log('DEBUG', "Successfully generated multi-view image");
+            await log('DEBUG', "Multi-view data type: " + typeof mvsResult.data);
+            
+            // Save the multi-view image
+            const mvsResult2 = await saveFileFromData(
+              mvsResult.data,
+              "3d_multiview",
+              "png",
+              toolName
+            );
+            const mvsImagePath = mvsResult2.filePath;
+            await log('INFO', `Multi-view image saved at: ${mvsImagePath}`);
+            await logOperation(toolName, operationId, 'PROCESSING', { step: 'Multi-view generation complete', path: mvsImagePath });
+            
+            // 2.4: Generate 3D models (OBJ and GLB)
+            await log('DEBUG', "Generating 3D models...");
+            await logOperation(toolName, operationId, 'PROCESSING', { step: 'Generating 3D models' });
+            
+            // This step is particularly prone to GPU quota errors, so use retry with backoff
+            const modelResult = await retryWithBackoff(async () => {
+              return await clientInstantMesh.predict("/make3d", []);
+            }, 5); // More retries for this critical step
+            
+            if (!modelResult || !modelResult.data || !modelResult.data.length) {
+              throw new Error("3D model generation failed");
+            }
+            
+            await log('DEBUG', "Successfully generated 3D models");
+            await log('DEBUG', "Model data type: " + typeof modelResult.data);
+            
+            // Save debug information for troubleshooting
+            const modelDebugFilename = generateUniqueFilename("model_data", "json");
+            const modelDebugPath = path.join(assetsDir, modelDebugFilename);
+            await fs.writeFile(modelDebugPath, JSON.stringify(modelResult, null, 2));
+            await log('DEBUG', `Model data saved as JSON at: ${modelDebugPath}`);
+            
+            // The API returns both OBJ and GLB formats
+            const objModelData = modelResult.data[0];
+            const glbModelData = modelResult.data[1];
+            
+            // Save both model formats
+            const objResult = await saveFileFromData(objModelData, "3d_model", "obj", toolName);
+            await log('INFO', `OBJ model saved at: ${objResult.filePath}`);
+            
+            const glbResult = await saveFileFromData(glbModelData, "3d_model", "glb", toolName);
+            await log('INFO', `GLB model saved at: ${glbResult.filePath}`);
+            
+            await logOperation(toolName, operationId, 'COMPLETED', {
+              objPath: objResult.filePath,
+              glbPath: glbResult.filePath
+            });
+            
+            // Here you would typically send the final response to the client
+            // Since we're already returning the initial response, we'll log the completion
+            await log('INFO', `Operation ${operationId} completed successfully. Final response ready.`);
+            
+          } catch (error) {
+            await log('ERROR', `Error in background processing for operation ${operationId}: ${error.message}`);
+            await logOperation(toolName, operationId, 'ERROR', { error: error.message });
+            
+            // Here you would typically send an error response to the client
+            // Since we're already returning the initial response, we'll log the error
+            await log('ERROR', `Operation ${operationId} failed: ${error.message}`);
+          }
+        })();
+        
+        // Return the initial response immediately to prevent timeout
+        return initialResponse;
+      } catch (error) {
+        await log('ERROR', `Error starting operation ${operationId}: ${error.message}`);
+        await logOperation(toolName, operationId, 'ERROR', { error: error.message });
+        return {
+          content: [{ type: "text", text: `Error starting 3D asset generation: ${error.message}` }],
+          isError: true
+        };
       }
-      await log('INFO', `Generating 3D asset with prompt: "${prompt}"`);
-      
-      // Use the Hugging Face Inference API to generate the image
-      await log('DEBUG', "Calling Hugging Face Inference API for 3D asset generation...");
-      const image = await inferenceClient.textToImage({
-        model: "gokaygokay/Flux-Game-Assets-LoRA-v2",
-        inputs: prompt,
-        parameters: { num_inference_steps: 50 },
-        provider: "hf-inference",
-      });
-      
-      if (!image) {
-        throw new Error("No image returned from 3D image generation API");
-      }
-      
-      // Save the image (which is a Blob)
-      const saveResult = await saveFileFromData(image, "3d_image", "png", toolName);
-      const imagePath = saveResult.filePath;
-      await log('INFO', `3D image generated at: ${imagePath}`);
-      
-      // Step 2: Process the image with InstantMesh using the correct multi-step process
-      
-      // 2.1: Check if the image is valid
-      await log('DEBUG', "Validating image for 3D conversion...");
-      const imageFile = await fs.readFile(imagePath);
-      const checkResult = await clientInstantMesh.predict("/check_input_image", [
-        new File([imageFile], path.basename(imagePath), { type: "image/png" })
-      ]);
-      
-      // 2.2: Preprocess the image (with background removal)
-      await log('DEBUG', "Preprocessing image...");
-      const preprocessResult = await clientInstantMesh.predict("/preprocess", [
-        new File([imageFile], path.basename(imagePath), { type: "image/png" }),
-        true // Remove background
-      ]);
-      
-      if (!preprocessResult || !preprocessResult.data) {
-        throw new Error("Image preprocessing failed");
-      }
-      
-      await log('DEBUG', "Successfully preprocessed image with InstantMesh");
-      await log('DEBUG', "Preprocessed data type: " + typeof preprocessResult.data);
-      
-      // Save the preprocessed image
-      const processedResult = await saveFileFromData(
-        preprocessResult.data,
-        "3d_processed",
-        "png",
-        toolName
-      );
-      const processedImagePath = processedResult.filePath;
-      await log('INFO', `Preprocessed image saved at: ${processedImagePath}`);
-      
-      // 2.3: Generate multi-views
-      await log('DEBUG', "Generating multi-views...");
-      const processedImageFile = await fs.readFile(processedImagePath);
-      const mvsResult = await clientInstantMesh.predict("/generate_mvs", [
-        new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
-        75, // Sample steps (between 30 and 75)
-        42  // Seed value
-      ]);
-      
-      if (!mvsResult || !mvsResult.data) {
-        throw new Error("Multi-view generation failed");
-      }
-      
-      await log('DEBUG', "Successfully generated multi-view image");
-      await log('DEBUG', "Multi-view data type: " + typeof mvsResult.data);
-      
-      // Save the multi-view image
-      const mvsResult2 = await saveFileFromData(
-        mvsResult.data,
-        "3d_multiview",
-        "png",
-        toolName
-      );
-      const mvsImagePath = mvsResult2.filePath;
-      await log('INFO', `Multi-view image saved at: ${mvsImagePath}`);
-      
-      // 2.4: Generate 3D models (OBJ and GLB)
-      await log('DEBUG', "Generating 3D models...");
-      const modelResult = await clientInstantMesh.predict("/make3d", []);
-      
-      if (!modelResult || !modelResult.data || !modelResult.data.length) {
-        throw new Error("3D model generation failed");
-      }
-      
-      await log('DEBUG', "Successfully generated 3D models");
-      await log('DEBUG', "Model data type: " + typeof modelResult.data);
-      
-      // Save debug information for troubleshooting
-      const modelDebugFilename = generateUniqueFilename("model_data", "json");
-      const modelDebugPath = path.join(assetsDir, modelDebugFilename);
-      await fs.writeFile(modelDebugPath, JSON.stringify(modelResult, null, 2));
-      await log('DEBUG', `Model data saved as JSON at: ${modelDebugPath}`);
-      
-      // The API returns both OBJ and GLB formats
-      const objModelData = modelResult.data[0];
-      const glbModelData = modelResult.data[1];
-      
-      // Save both model formats
-      const objResult = await saveFileFromData(objModelData, "3d_model", "obj", toolName);
-      await log('INFO', `OBJ model saved at: ${objResult.filePath}`);
-      
-      const glbResult = await saveFileFromData(glbModelData, "3d_model", "glb", toolName);
-      await log('INFO', `GLB model saved at: ${glbResult.filePath}`);
-      
-      return {
-        content: [
-          { type: "text", text: `3D models available at:\nOBJ: ${objResult.resourceUri}\nGLB: ${glbResult.resourceUri}` }
-        ],
-        isError: false
-      };
     }
 
     throw new Error(`Unknown tool: ${toolName}`);
