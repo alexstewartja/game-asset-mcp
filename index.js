@@ -104,7 +104,7 @@ async function logOperation(toolName, operationId, status, details = {}) {
 }
 
 // Retry function with exponential backoff
-async function retryWithBackoff(operation, operationId = null, maxRetries = 3, initialDelay = 5000) {
+async function retryWithBackoff(operation, operationId = null, maxRetries = 3, initialDelay = 600) {
   let retries = 0;
   let delay = initialDelay;
   
