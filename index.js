@@ -167,7 +167,7 @@ const MCP_ERROR_CODES = {
 
 // Initialize MCP server
 const server = new Server(
-  { name: "game-asset-generator", version: "1.0.0" },
+  { name: "game-asset-generator", version: "0.1.0" }, // Updated to version 0.1.0
   {
     capabilities: {
       tools: { list: true, call: true },
@@ -1021,7 +1021,7 @@ async function main() {
       res.status(200).json({
         status: "ok",
         timestamp: new Date().toISOString(),
-        version: "1.0.0",
+        version: "0.1.0", // Updated to version 0.1.0
         uptime: process.uptime()
       });
     });
@@ -1122,7 +1122,7 @@ async function main() {
       return {
         status: "ok",
         timestamp: new Date().toISOString(),
-        version: "1.0.0",
+        version: "0.1.0", // Updated to version 0.1.0
         uptime: process.uptime()
       };
     });
