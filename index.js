@@ -24,7 +24,7 @@ dotenv.config();
 // Logging function
 async function log(message) {
   const timestamp = new Date().toISOString();
-  console.log(`[INFO] ${timestamp} - ${message}`);
+  console.error(`[INFO] ${timestamp} - ${message}`);
 }
 
 // Initialize MCP server
