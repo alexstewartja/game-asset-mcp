@@ -13,6 +13,7 @@ import {
   ListResourceTemplatesRequestSchema
 } from "@modelcontextprotocol/sdk/types.js";
 import { Client } from "@gradio/client";
+import { InferenceClient } from "@huggingface/inference";
 import { promises as fs } from "fs";
 import path from "path";
 import express from "express";
@@ -134,33 +135,33 @@ const TOOLS = {
 // Get authentication credentials from environment variables
 const gradioUsername = process.env.GRADIO_USERNAME;
 const gradioPassword = process.env.GRADIO_PASSWORD;
+const hfToken = process.env.HF_TOKEN;
 
-// Authentication options
+// Authentication options for Gradio
 const authOptions = gradioUsername && gradioPassword
   ? { auth: [gradioUsername, gradioPassword] }
   : {};
 
-// Connect to Hugging Face Spaces with authentication if credentials are provided
-let client2D, client3D, clientInstantMesh;
+// Connect to Hugging Face Spaces and Inference API
+let clientInstantMesh;
+let inferenceClient;
 
-try {
-  await log('INFO', "Connecting to 2D asset generation API...");
-  client2D = await Client.connect("mubarak-alketbi/gokaygokay-Flux-2D-Game-Assets-LoRA", authOptions);
-  await log('INFO', "Successfully connected to 2D asset generation API");
-} catch (error) {
-  await log('ERROR', `Error connecting to 2D asset generation API: ${error.message}`);
-  throw new Error("Failed to connect to 2D asset generation API. Check your credentials and network connection.");
+// Initialize Hugging Face Inference Client for 2D and 3D asset generation
+if (!hfToken) {
+  await log('ERROR', "HF_TOKEN is required in the .env file for 2D and 3D asset generation");
+  throw new Error("HF_TOKEN is required in the .env file for 2D and 3D asset generation");
 }
 
 try {
-  await log('INFO', "Connecting to 3D asset generation API...");
-  client3D = await Client.connect("mubarak-alketbi/gokaygokay-Flux-Game-Assets-LoRA-v2", authOptions);
-  await log('INFO', "Successfully connected to 3D asset generation API");
+  await log('INFO', "Initializing Hugging Face Inference Client...");
+  inferenceClient = new InferenceClient(hfToken);
+  await log('INFO', "Successfully initialized Hugging Face Inference Client");
 } catch (error) {
-  await log('ERROR', `Error connecting to 3D asset generation API: ${error.message}`);
-  throw new Error("Failed to connect to 3D asset generation API. Check your credentials and network connection.");
+  await log('ERROR', `Error initializing Hugging Face Inference Client: ${error.message}`);
+  throw new Error("Failed to initialize Hugging Face Inference Client. Check your HF_TOKEN.");
 }
 
+// Connect to InstantMesh API using Gradio client (this one works correctly)
 try {
   await log('INFO', "Connecting to InstantMesh API...");
   clientInstantMesh = await Client.connect("TencentARC/InstantMesh", authOptions);
@@ -192,27 +193,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       await log('INFO', `Generating 2D asset with prompt: "${prompt}"`);
       
-      const apiResult = await client2D.predict("/predict", [prompt]);
-      if (!apiResult || !apiResult.data || !apiResult.data.length) {
-        throw new Error("No data returned from 2D asset generation API");
+      // Use the Hugging Face Inference API to generate the image
+      await log('DEBUG', "Calling Hugging Face Inference API for 2D asset generation...");
+      const image = await inferenceClient.textToImage({
+        model: "gokaygokay/Flux-2D-Game-Assets-LoRA",
+        inputs: prompt,
+        parameters: { num_inference_steps: 30 },
+        provider: "hf-inference",
+      });
+      
+      if (!image) {
+        throw new Error("No image returned from 2D asset generation API");
       }
       
-      const imageData = apiResult.data[0];
-      let imageUrl;
-      if (typeof imageData === 'object' && imageData.url) {
-        imageUrl = imageData.url;
-      } else if (typeof imageData === 'string' && imageData.startsWith('http')) {
-        imageUrl = imageData;
-      } else {
-        const saveResult = await saveFileFromData(imageData, "2d_asset", "png", toolName);
-        await log('INFO', `2D asset saved at: ${saveResult.filePath}`);
-        return {
-          content: [{ type: "text", text: `2D asset available at ${saveResult.resourceUri}` }],
-          isError: false
-        };
-      }
-      
-      const saveResult = await saveFileFromUrl(imageUrl, "2d_asset", "png", toolName);
+      // Save the image (which is a Blob)
+      const saveResult = await saveFileFromData(image, "2d_asset", "png", toolName);
       await log('INFO', `2D asset saved at: ${saveResult.filePath}`);
       return {
         content: [{ type: "text", text: `2D asset available at ${saveResult.resourceUri}` }],
@@ -227,23 +222,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       await log('INFO', `Generating 3D asset with prompt: "${prompt}"`);
       
-      const imageResult = await client3D.predict("/predict", [prompt]);
-      if (!imageResult || !imageResult.data || !imageResult.data.length) {
-        throw new Error("No data returned from 3D image generation API");
+      // Use the Hugging Face Inference API to generate the image
+      await log('DEBUG', "Calling Hugging Face Inference API for 3D asset generation...");
+      const image = await inferenceClient.textToImage({
+        model: "gokaygokay/Flux-Game-Assets-LoRA-v2",
+        inputs: prompt,
+        parameters: { num_inference_steps: 30 },
+        provider: "hf-inference",
+      });
+      
+      if (!image) {
+        throw new Error("No image returned from 3D image generation API");
       }
       
-      const imageData = imageResult.data[0];
-      let imagePath;
-      if (typeof imageData === 'object' && imageData.url) {
-        const saveResult = await saveFileFromUrl(imageData.url, "3d_image", "png", toolName);
-        imagePath = saveResult.filePath;
-      } else if (typeof imageData === 'string' && imageData.startsWith('http')) {
-        const saveResult = await saveFileFromUrl(imageData, "3d_image", "png", toolName);
-        imagePath = saveResult.filePath;
-      } else {
-        const saveResult = await saveFileFromData(imageData, "3d_image", "png", toolName);
-        imagePath = saveResult.filePath;
-      }
+      // Save the image (which is a Blob)
+      const saveResult = await saveFileFromData(image, "3d_image", "png", toolName);
+      const imagePath = saveResult.filePath;
       await log('INFO', `3D image generated at: ${imagePath}`);
       
       // Step 2: Process the image with InstantMesh using the correct multi-step process

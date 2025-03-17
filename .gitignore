@@ -3,3 +3,5 @@ roo_docs/
 tech_docs/
 .env
 assets/
+logs/
+update_api_docs.js
