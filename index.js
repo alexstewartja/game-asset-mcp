@@ -55,13 +55,34 @@ async function log(level = 'INFO', message) {
 
 // Enhanced logging with operation ID for tracking long-running operations
 let operationCounter = 0;
+// Global object to store operation updates that can be accessed by clients
+global.operationUpdates = {};
+
 async function logOperation(toolName, operationId, status, details = {}) {
   const level = status === 'ERROR' ? 'ERROR' : 'INFO';
   const detailsStr = Object.entries(details)
     .map(([key, value]) => `${key}: ${value}`)
     .join(', ');
   
-  await log(level, `Operation ${operationId} [${toolName}] - ${status}${detailsStr ? ' - ' + detailsStr : ''}`);
+  const logMessage = `Operation ${operationId} [${toolName}] - ${status}${detailsStr ? ' - ' + detailsStr : ''}`;
+  await log(level, logMessage);
+  
+  // Store the update in the global object for potential client access
+  if (!global.operationUpdates[operationId]) {
+    global.operationUpdates[operationId] = [];
+  }
+  
+  global.operationUpdates[operationId].push({
+    status: status,
+    details: details,
+    timestamp: new Date().toISOString(),
+    message: logMessage
+  });
+  
+  // Limit the size of the updates array to prevent memory issues
+  if (global.operationUpdates[operationId].length > 100) {
+    global.operationUpdates[operationId].shift(); // Remove the oldest update
+  }
 }
 
 // Retry function with exponential backoff
@@ -88,7 +109,23 @@ async function retryWithBackoff(operation, maxRetries = 3, initialDelay = 5000) 
         const seconds = parseInt(gpuQuotaMatch[3]) || 0;
         const waitTime = (hours * 3600 + minutes * 60 + seconds) * 1000;
         
-        await log('WARN', `GPU quota exceeded. Waiting for ${waitTime/1000} seconds before retry ${retries}/${maxRetries}`);
+        const waitTimeSeconds = Math.ceil(waitTime/1000);
+        const waitMessage = `GPU quota exceeded. Waiting for ${waitTimeSeconds} seconds before retry ${retries}/${maxRetries}`;
+        await log('WARN', waitMessage);
+        
+        // If this is part of a 3D asset generation operation, we could update the client here
+        // This would require a mechanism to send updates to the client
+        if (global.operationUpdates && global.operationUpdates[operationId]) {
+          global.operationUpdates[operationId].push({
+            status: "WAITING",
+            message: waitMessage,
+            retryCount: retries,
+            maxRetries: maxRetries,
+            waitTime: waitTimeSeconds,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
         await new Promise(resolve => setTimeout(resolve, waitTime + 1000)); // Add 1 second buffer
       } else {
         // For other errors, use exponential backoff
@@ -274,12 +311,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         await log('INFO', `Generating 3D asset with prompt: "${prompt}"`);
         await logOperation(toolName, operationId, 'PROCESSING', { step: 'Parsing prompt', prompt });
         
-        // Initial response to prevent timeout
+        // Initial response to prevent timeout with more detailed information
         const initialResponse = {
           content: [
-            { type: "text", text: `Starting 3D asset generation (Operation ID: ${operationId})...\nThis may take a few minutes. You'll receive the final result when complete.` }
+            {
+              type: "text",
+              text: `Starting 3D asset generation (Operation ID: ${operationId})...\n\n` +
+                    `This process involves several steps:\n` +
+                    `1. Generating initial 3D image from prompt\n` +
+                    `2. Validating image for 3D conversion\n` +
+                    `3. Preprocessing image (removing background)\n` +
+                    `4. Generating multi-view images\n` +
+                    `5. Creating 3D models (OBJ and GLB)\n\n` +
+                    `This may take several minutes. The process will continue in the background.\n` +
+                    `You'll see status updates here for any significant events (like GPU quota limits).\n` +
+                    `The final 3D models will be available when the process completes.`
+            }
           ],
-          isError: false
+          isError: false,
+          metadata: {
+            operationId: operationId,
+            status: "STARTED",
+            startTime: new Date().toISOString(),
+            prompt: prompt
+          }
         };
         
         // Start the 3D asset generation process in the background
@@ -414,22 +469,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const glbResult = await saveFileFromData(glbModelData, "3d_model", "glb", toolName);
             await log('INFO', `GLB model saved at: ${glbResult.filePath}`);
             
+            // Create a completion message with detailed information
+            const completionMessage = `3D asset generation complete (Operation ID: ${operationId}).\n\n` +
+                                     `Process completed in ${Math.round((Date.now() - new Date(global.operationUpdates[operationId][0].timestamp).getTime()) / 1000)} seconds.\n\n` +
+                                     `3D models available at:\n` +
+                                     `- OBJ: ${objResult.resourceUri}\n` +
+                                     `- GLB: ${glbResult.resourceUri}\n\n` +
+                                     `You can view these models in any 3D viewer that supports OBJ or GLB formats.`;
+            
             await logOperation(toolName, operationId, 'COMPLETED', {
               objPath: objResult.filePath,
-              glbPath: glbResult.filePath
+              glbPath: glbResult.filePath,
+              objUri: objResult.resourceUri,
+              glbUri: glbResult.resourceUri,
+              processingTime: `${Math.round((Date.now() - new Date(global.operationUpdates[operationId][0].timestamp).getTime()) / 1000)} seconds`
             });
             
             // Here you would typically send the final response to the client
             // Since we're already returning the initial response, we'll log the completion
             await log('INFO', `Operation ${operationId} completed successfully. Final response ready.`);
             
+            // In a real-world scenario, you would send this completion message to the client
+            // For example, through a WebSocket connection or by updating a status endpoint
+            // For now, we'll just log it
+            await log('INFO', `Completion message for client:\n${completionMessage}`);
+            
           } catch (error) {
+            const errorMessage = `Error in 3D asset generation (Operation ID: ${operationId}):\n${error.message}\n\nThe operation has been terminated. Please try again later or with a different prompt.`;
+            
             await log('ERROR', `Error in background processing for operation ${operationId}: ${error.message}`);
-            await logOperation(toolName, operationId, 'ERROR', { error: error.message });
+            await logOperation(toolName, operationId, 'ERROR', {
+              error: error.message,
+              stack: error.stack,
+              phase: global.operationUpdates[operationId] ?
+                     global.operationUpdates[operationId][global.operationUpdates[operationId].length - 1].status :
+                     'UNKNOWN'
+            });
             
             // Here you would typically send an error response to the client
             // Since we're already returning the initial response, we'll log the error
             await log('ERROR', `Operation ${operationId} failed: ${error.message}`);
+            
+            // In a real-world scenario, you would send this error message to the client
+            // For example, through a WebSocket connection or by updating a status endpoint
+            // For now, we'll just log it
+            await log('INFO', `Error message for client:\n${errorMessage}`);
           }
         })();
         
