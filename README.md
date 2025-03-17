@@ -71,6 +71,11 @@ Before installing the project, ensure you have the following:
 - **Node.js**: Version 16 or higher (includes `npm`).
 - **Git**: For cloning the repository.
 - **Internet Access**: Required to interact with Hugging Face Spaces APIs.
+- **NPM Packages**: The project uses the following dependencies:
+  - `@gradio/client`: For interacting with Hugging Face Spaces.
+  - `@modelcontextprotocol/sdk`: For MCP server implementation.
+  - `dotenv`: For loading environment variables.
+  - `express`: For SSE transport (remote access).
 - **Optional**: Claude Desktop or another MCP-compatible client for advanced interaction.
 
 ---
@@ -91,17 +96,25 @@ Follow these steps to set up the project locally:
    npm install
    ```
 
-3. **Configure Authentication (Optional)**:
+3. **Install Additional Dependencies (if needed)**:
+   If you've modified the package.json file or are missing dependencies:
+   ```bash
+   npm install dotenv express
+   ```
+
+4. **Configure Authentication (Optional)**:
    If you need to access private Hugging Face Spaces:
    ```bash
    cp .env.example .env
    # Edit .env with your credentials
    ```
 
-4. **Run the Server**:
+5. **Run the Server**:
    Start the MCP server:
    ```bash
    # Basic usage
+   npm start
+   # or
    node index.js
    
    # With custom working directory
@@ -112,6 +125,8 @@ Follow these steps to set up the project locally:
    ```
 
 The server will start listening for MCP requests. You're now ready to generate assets!
+
+> **Note**: This project uses ES modules (import/export syntax). The `"type": "module"` field in package.json enables this feature in Node.js.
 
 ---
 
@@ -298,6 +313,9 @@ See [Configuration](#configuration) for setup instructions.
 - **Authentication Errors**:
   - **Cause**: Incorrect credentials for private Hugging Face Spaces.
   - **Solution**: Verify your username and password in the `.env` file.
+- **ES Modules Error**:
+  - **Cause**: Node.js trying to run the code as CommonJS instead of ES modules.
+  - **Solution**: Ensure the package.json has `"type": "module"` field.
 - **File Saving Issues**:
   - **Cause**: Insufficient permissions in the working directory.
   - **Solution**: Ensure the directory is writable or specify a different working directory.
