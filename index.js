@@ -3,6 +3,14 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema
+} from "@modelcontextprotocol/sdk/types.js";
 import { Client } from "@gradio/client";
 import { promises as fs } from "fs";
 import path from "path";
@@ -130,14 +138,14 @@ try {
 }
 
 // Register tool list handler
-server.setRequestHandler("tools/list", async () => {
+server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [TOOLS.GENERATE_2D_ASSET, TOOLS.GENERATE_3D_ASSET]
   };
 });
 
 // Tool call handler
-server.setRequestHandler("tools/call", async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const toolName = request.params.name;
   const args = request.params.arguments;
 
@@ -439,7 +447,7 @@ async function saveFileFromData(data, prefix, ext, toolName) {
 }
 
 // Resource listing (for file management)
-server.setRequestHandler("resources/list", async () => {
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
   await log("Listing resources");
   
   try {
@@ -470,7 +478,7 @@ server.setRequestHandler("resources/list", async () => {
 });
 
 // Resource read handler
-server.setRequestHandler("resources/read", async (request) => {
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const uri = request.params.uri;
   await log(`Reading resource: ${uri}`);
   
@@ -512,7 +520,7 @@ server.setRequestHandler("resources/read", async (request) => {
 });
 
 // Prompt handlers
-server.setRequestHandler("prompts/list", async () => {
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
   return {
     prompts: [
       {
@@ -529,7 +537,7 @@ server.setRequestHandler("prompts/list", async () => {
   };
 });
 
-server.setRequestHandler("prompts/get", async (request) => {
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
   const promptName = request.params.name;
   
   if (promptName === "generate_2d_sprite") {
