@@ -198,7 +198,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const image = await inferenceClient.textToImage({
         model: "gokaygokay/Flux-2D-Game-Assets-LoRA",
         inputs: prompt,
-        parameters: { num_inference_steps: 30 },
+        parameters: { num_inference_steps: 50 },
         provider: "hf-inference",
       });
       
@@ -227,7 +227,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const image = await inferenceClient.textToImage({
         model: "gokaygokay/Flux-Game-Assets-LoRA-v2",
         inputs: prompt,
-        parameters: { num_inference_steps: 30 },
+        parameters: { num_inference_steps: 50 },
         provider: "hf-inference",
       });
       
@@ -260,6 +260,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error("Image preprocessing failed");
       }
       
+      await log('DEBUG', "Successfully preprocessed image with InstantMesh");
+      await log('DEBUG', "Preprocessed data type: " + typeof preprocessResult.data);
+      
       // Save the preprocessed image
       const processedResult = await saveFileFromData(
         preprocessResult.data,
@@ -275,13 +278,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const processedImageFile = await fs.readFile(processedImagePath);
       const mvsResult = await clientInstantMesh.predict("/generate_mvs", [
         new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
-        50, // Sample steps (between 30 and 75)
+        75, // Sample steps (between 30 and 75)
         42  // Seed value
       ]);
       
       if (!mvsResult || !mvsResult.data) {
         throw new Error("Multi-view generation failed");
       }
+      
+      await log('DEBUG', "Successfully generated multi-view image");
+      await log('DEBUG', "Multi-view data type: " + typeof mvsResult.data);
       
       // Save the multi-view image
       const mvsResult2 = await saveFileFromData(
@@ -300,6 +306,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!modelResult || !modelResult.data || !modelResult.data.length) {
         throw new Error("3D model generation failed");
       }
+      
+      await log('DEBUG', "Successfully generated 3D models");
+      await log('DEBUG', "Model data type: " + typeof modelResult.data);
+      
+      // Save debug information for troubleshooting
+      const modelDebugFilename = generateUniqueFilename("model_data", "json");
+      const modelDebugPath = path.join(assetsDir, modelDebugFilename);
+      await fs.writeFile(modelDebugPath, JSON.stringify(modelResult, null, 2));
+      await log('DEBUG', `Model data saved as JSON at: ${modelDebugPath}`);
       
       // The API returns both OBJ and GLB formats
       const objModelData = modelResult.data[0];
@@ -420,25 +435,60 @@ async function saveFileFromData(data, prefix, ext, toolName) {
   try {
     // Handle different data types
     if (data instanceof Blob || data instanceof File) {
+      await log('DEBUG', "Saving data as Blob/File");
       const arrayBuffer = await data.arrayBuffer();
       await fs.writeFile(filePath, Buffer.from(arrayBuffer));
     } else if (typeof data === 'string') {
       // Check if it's base64 encoded
       if (data.match(/^data:[^;]+;base64,/)) {
+        await log('DEBUG', "Saving data as base64 string");
         const base64Data = data.split(',')[1];
         await fs.writeFile(filePath, Buffer.from(base64Data, 'base64'));
       } else {
-        // Regular string data
+        await log('DEBUG', "Saving data as regular string");
         await fs.writeFile(filePath, data);
       }
     } else if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
-      // ArrayBuffer or TypedArray
+      await log('DEBUG', "Saving data as ArrayBuffer");
       await fs.writeFile(filePath, Buffer.from(data));
+    } else if (Array.isArray(data) && data.length > 0) {
+      // Handle array of file data (common in InstantMesh API responses)
+      await log('DEBUG', "Data is an array with " + data.length + " items");
+      const fileData = data[0];
+      
+      if (fileData.url) {
+        await log('DEBUG', "Found URL in data: " + fileData.url);
+        // Fetch the file from the URL
+        const response = await fetch(fileData.url);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+        }
+        
+        const buffer = await response.arrayBuffer();
+        await fs.writeFile(filePath, Buffer.from(buffer));
+        await log('DEBUG', "Successfully saved file from URL");
+      } else {
+        await log('DEBUG', "No URL found in array data, saving as JSON");
+        await fs.writeFile(filePath, JSON.stringify(data));
+      }
+    } else if (typeof data === 'object' && data.url) {
+      // Handle object with URL property
+      await log('DEBUG', "Data is an object with URL: " + data.url);
+      const response = await fetch(data.url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+      }
+      
+      const buffer = await response.arrayBuffer();
+      await fs.writeFile(filePath, Buffer.from(buffer));
+      await log('DEBUG', "Successfully saved file from URL");
     } else if (typeof data === 'object') {
       // JSON or other object
+      await log('DEBUG', "Saving data as JSON object");
       await fs.writeFile(filePath, JSON.stringify(data));
     } else {
       // Fallback
+      await log('DEBUG', "Saving data using fallback method");
       await fs.writeFile(filePath, Buffer.from(String(data)));
     }
     
@@ -449,6 +499,25 @@ async function saveFileFromData(data, prefix, ext, toolName) {
     };
   } catch (error) {
     await log('ERROR', `Error saving file from data: ${error.message}`);
+    
+    // Save debug information for troubleshooting
+    try {
+      const debugFilename = generateUniqueFilename("debug_data", "json");
+      const debugPath = path.join(assetsDir, debugFilename);
+      let debugData;
+      
+      if (typeof data === 'object') {
+        debugData = JSON.stringify(data, null, 2);
+      } else {
+        debugData = String(data);
+      }
+      
+      await fs.writeFile(debugPath, debugData);
+      await log('INFO', `Debug data saved at: ${debugPath}`);
+    } catch (debugError) {
+      await log('ERROR', `Failed to save debug data: ${debugError.message}`);
+    }
+    
     throw new Error("Failed to save file from data");
   }
 }
