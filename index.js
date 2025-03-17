@@ -279,9 +279,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       
       // Use the Hugging Face Inference API to generate the image
       await log('DEBUG', "Calling Hugging Face Inference API for 2D asset generation...");
+      // Enhance the prompt to specify high detail, complete object, and white background
+      const enhancedPrompt = `${prompt}, high detailed, complete object, not cut off, white solid background`;
+      await log('DEBUG', `Enhanced 2D prompt: "${enhancedPrompt}"`);
+      
       const image = await inferenceClient.textToImage({
         model: "gokaygokay/Flux-2D-Game-Assets-LoRA",
-        inputs: prompt,
+        inputs: enhancedPrompt,
         parameters: { num_inference_steps: 50 },
         provider: "hf-inference",
       });
@@ -345,10 +349,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             await log('DEBUG', "Calling Hugging Face Inference API for 3D asset generation...");
             
             // Use retry mechanism for the image generation
+            // Enhance the prompt to specify high detail, complete object, and white background
+            const enhancedPrompt = `${prompt}, high detailed, complete object, not cut off, white solid background`;
+            await log('DEBUG', `Enhanced 3D prompt: "${enhancedPrompt}"`);
+            
             const image = await retryWithBackoff(async () => {
               return await inferenceClient.textToImage({
                 model: "gokaygokay/Flux-Game-Assets-LoRA-v2",
-                inputs: prompt,
+                inputs: enhancedPrompt,
                 parameters: { num_inference_steps: 50 },
                 provider: "hf-inference",
               });
@@ -867,7 +875,7 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
       messages: [
         {
           role: "user",
-          content: { type: "text", text: `Generate a 2D sprite: ${request.params.arguments.prompt}` }
+          content: { type: "text", text: `Generate a 2D sprite: ${request.params.arguments.prompt}, high detailed, complete object, not cut off, white solid background` }
         }
       ]
     };
@@ -879,7 +887,7 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
       messages: [
         {
           role: "user",
-          content: { type: "text", text: `Generate a 3D model: ${request.params.arguments.prompt}` }
+          content: { type: "text", text: `Generate a 3D model: ${request.params.arguments.prompt}, high detailed, complete object, not cut off, white solid background` }
         }
       ]
     };
