@@ -22,7 +22,13 @@ async function log(message) {
 // Initialize MCP server
 const server = new Server(
   { name: "game-asset-generator", version: "1.0.0" },
-  { capabilities: { tools: {}, resources: { list: true, read: true }, prompts: {} } }
+  {
+    capabilities: {
+      tools: true,
+      resources: { list: true, read: true },
+      prompts: true
+    }
+  }
 );
 // Allow working directory to be specified via command-line argument
 const workDir = process.argv[2] || process.cwd();
