@@ -1,6 +1,6 @@
 # Game Asset Generator using MCP and Hugging Face Spaces
 
-This project is an innovative tool designed to streamline the creation of game assets by leveraging artificial intelligence. It enables users to generate both 2D and 3D game assets from simple text prompts, utilizing cutting-edge AI models hosted on Hugging Face Spaces. The backend is built as a server that integrates with the Model Context Protocol (MCP), making it compatible with AI assistants like Claude Desktop for seamless interaction. Whether you're a game developer looking to prototype assets quickly or an AI enthusiast experimenting with generative models, this project provides a robust and flexible solution.
+This project is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "TencentARC/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop.
 
 ---
 
@@ -13,80 +13,72 @@ This project is an innovative tool designed to streamline the creation of game a
 5. [Installation](#installation)
 6. [Usage](#usage)
 7. [Configuration](#configuration)
-8. [API Endpoints](#api-endpoints)
-9. [File Management](#file-management)
-10. [Backend Architecture](#backend-architecture)
-11. [MCP Integration](#mcp-integration)
-12. [Troubleshooting](#troubleshooting)
-13. [Contributing](#contributing)
-14. [License](#license)
+8. [File Management](#file-management)
+9. [MCP Integration](#mcp-integration)
+10. [Troubleshooting](#troubleshooting)
+11. [Advanced](#advanced)
+12. [Contributing](#contributing)
+13. [License](#license)
 
 ---
 
 ## Project Overview
 
-The **Game Asset Generator** aims to simplify the process of creating game-ready assets by combining AI-powered generation with an easy-to-use interface. The project integrates three distinct AI models hosted on Hugging Face Spaces:
-
-- **2D Asset Generation**: Uses the "gokaygokay/Flux-2D-Game-Assets-LoRA" model to create 2D images (e.g., pixel art sprites) from text prompts.
-- **3D Asset Image Generation**: Employs "gokaygokay/Flux-Game-Assets-LoRA-v2" to generate images suitable for 3D modeling.
-- **3D Model Conversion**: Leverages "TencentARC/InstantMesh" to transform 2D images into 3D models (e.g., OBJ or GLB formats).
-
-The backend is implemented as an MCP server, exposing these capabilities as tools that can be invoked programmatically or through an AI assistant like Claude Desktop. Generated assets are saved locally, making them immediately accessible for use in game development workflows.
+The **Game Asset Generator** is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "TencentARC/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop.
 
 ---
 
 ## Features
 
-- **2D Asset Generation**: Create pixel art, sprites, or other 2D game assets from text descriptions.
-- **3D Asset Generation**: Generate fully realized 3D models from text prompts, with automatic image-to-model conversion.
-- **MCP Integration**: Seamlessly interact with the generator using MCP-compatible clients, such as Claude Desktop.
-- **File Management**: Automatically save and organize generated assets in the local filesystem.
-- **Resource Templates**: Support for dynamic resource URIs (e.g., `asset://{type}/{id}`) for filtering assets by type.
-- **Robust Input Validation**: Uses Zod schema validation for secure and reliable input processing.
-- **Multi-Client Support**: Enhanced SSE transport with support for multiple simultaneous client connections.
-- **Secure Remote Access**: Optional HTTPS support for secure communication with remote clients.
-- **Extensible Backend**: Built with modularity in mind, allowing for future expansion to additional models or features.
-- **Cross-Platform**: Works on any system with Node.js support (Windows, macOS, Linux).
+- **2D Asset Generation**: Create pixel art, sprites, or other 2D assets from text prompts (e.g., "pixel art sword").
+- **3D Asset Generation**: Generate 3D models (e.g., OBJ or GLB files) from text descriptions, with automatic image-to-model conversion.
+- **MCP Integration**: Interact effortlessly with the tool via MCP-compatible clients like Claude Desktop.
+- **File Management**: Automatically saves and organizes generated assets in your local filesystem for easy access and integration into projects.
+- **Resource Templates**: Filter and access assets using dynamic URIs (e.g., `asset://{type}/{id}`) for efficient resource management.
+- **Robust Input Validation**: Ensures secure and reliable processing with Zod schema validation.
+- **Multi-Client Support**: Handles multiple simultaneous connections via enhanced SSE transport.
+- **Secure Remote Access**: Offers optional HTTPS for safe communication with remote clients.
+- **Extensible Backend**: Designed modularly for easy expansion to new models or features.
+- **Cross-Platform**: Runs on Windows, macOS, and Linux with Node.js support.
 
 ---
 
 ## How It Works
 
-The project operates as a pipeline that connects user inputs to AI models and delivers usable game assets. Here's a step-by-step breakdown:
+The Game Asset Generator transforms text prompts into game-ready assets through an automated pipeline:
 
-1. **User Input**: The user provides a text prompt (e.g., "pixel art sword" or "isometric 3D castle").
-2. **MCP Server**: The prompt is received by the MCP server, which routes it to the appropriate tool:
-   - `generate_2d_asset`: For 2D asset creation.
-   - `generate_3d_asset`: For 3D asset creation.
-3. **AI Model Interaction**:
-   - For 2D assets, the prompt is sent to "gokaygokay/Flux-2D-Game-Assets-LoRA" via its Hugging Face Space API.
-   - For 3D assets, the prompt is first sent to "gokaygokay/Flux-Game-Assets-LoRA-v2" to generate an image, then the image is passed to "TencentARC/InstantMesh" for 3D conversion.
-4. **File Output**: The resulting asset (image for 2D, 3D model file for 3D) is saved to the local working directory.
-5. **Response**: The server returns the file path to the user or client, enabling immediate access.
+1. **User Input**: Provide a text prompt (e.g., "pixel art sword" or "isometric 3D castle").
+2. **MCP Server**: Routes the prompt to the appropriate tool (`generate_2d_asset` or `generate_3d_asset`).
+3. **AI Model Interaction**: 
+   - 2D assets use "gokaygokay/Flux-2D-Game-Assets-LoRA."
+   - 3D assets use "gokaygokay/Flux-Game-Assets-LoRA-v2" for images, then "TencentARC/InstantMesh" for 3D conversion.
+4. **File Output**: Saves the asset (image for 2D, model file for 3D) locally.
+5. **Response**: Returns the file path for immediate use.
 
-This process is fully automated and abstracted behind the MCP interface, making it user-friendly and efficient.
+Here's a visual overview:
+
+```
+User Prompt → MCP Server → AI Model(s) → Local File → File Path Response
+```
 
 ---
 
 ## Prerequisites
 
-Before installing the project, ensure you have the following:
-
 - **Node.js**: Version 16 or higher (includes `npm`).
 - **Git**: For cloning the repository.
-- **Internet Access**: Required to interact with Hugging Face Spaces APIs.
-- **NPM Packages**: The project uses the following dependencies:
-  - `@gradio/client`: For interacting with Hugging Face Spaces.
-  - `@modelcontextprotocol/sdk`: For MCP server implementation.
-  - `dotenv`: For loading environment variables.
-  - `express`: For SSE transport (remote access).
-- **Optional**: Claude Desktop or another MCP-compatible client for advanced interaction.
+- **Internet Access**: Needed to connect to Hugging Face Spaces APIs.
+- **Hugging Face Account**: Required for API access; get your token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
+- **NPM Packages**:
+  - `@gradio/client`: Interacts with Hugging Face Spaces.
+  - `@modelcontextprotocol/sdk`: Implements the MCP server.
+  - `dotenv`: Loads environment variables.
+  - `express`: Enables SSE transport for remote access.
+- **Optional**: Claude Desktop (or another MCP client) for enhanced interaction.
 
 ---
 
 ## Installation
-
-Follow these steps to set up the project locally:
 
 1. **Clone the Repository**:
    ```bash
@@ -95,270 +87,138 @@ Follow these steps to set up the project locally:
    ```
 
 2. **Install Dependencies**:
-   Install the required Node.js packages:
    ```bash
    npm install
    ```
 
-3. **Install Additional Dependencies (if needed)**:
-   If you've modified the package.json file or are missing dependencies:
-   ```bash
-   npm install dotenv express
-   ```
-
-4. **Configure Authentication (Optional)**:
-   If you need to access private Hugging Face Spaces:
+3. **Configure Authentication (Required)**:
    ```bash
    cp .env.example .env
-   # Edit .env with your credentials
+   # Edit .env with your Hugging Face API token and credentials
    ```
 
-5. **Run the Server**:
-   Start the MCP server:
+4. **Run the Server**:
    ```bash
-   # Basic usage
+   # Default (stdio transport)
    npm start
-   # or
-   node index.js
-   
-   # With custom working directory
-   node index.js /path/to/custom/directory
-   
-   # With SSE transport for remote access
+   # Custom working directory
+   node index.js /path/to/directory
+   # Remote access (SSE transport)
    node index.js --sse
    ```
 
-The server will start listening for MCP requests. You're now ready to generate assets!
-
-> **Note**: This project uses ES modules (import/export syntax). The `"type": "module"` field in package.json enables this feature in Node.js.
+> **Note**: This project uses ES modules (`"type": "module"` in `package.json`). If you encounter module-related errors, ensure you're using Node.js 16+ and that your environment supports ES modules. Run `node --version` to check.
 
 ---
 
 ## Usage
 
-With the server running, you can interact with it via an MCP client or programmatically. Below are examples of how to use the two main tools.
+Interact with the server via an MCP client (e.g., Claude Desktop) or programmatically. Here are the main tools:
 
-### Generate a 2D Asset
-- **Command**: 
-  ```
-  generate_2d_asset prompt:"pixel art sword"
-  ```
-- **Output**: A 2D image file (e.g., `generate_2d_asset_1698765432.png`) saved in the working directory.
-- **Response**: The file path (e.g., `/path/to/generate_2d_asset_1698765432.png`).
+- **Generate a 2D Asset**:
+  - **Purpose**: Creates a 2D image (e.g., PNG) from a text prompt.
+  - **Command**: `generate_2d_asset prompt:"pixel art sword"`
+  - **Output**: Saves a file like `2d_asset_generate_2d_asset_1698765432.png` and returns its path.
 
-### Generate a 3D Asset
-- **Command**: 
-  ```
-  generate_3d_asset prompt:"isometric 3D castle"
-  ```
-- **Output**: A 3D model file (e.g., `generate_3d_asset_1698765432.obj`) saved in the working directory.
-- **Response**: The file path (e.g., `/path/to/generate_3d_asset_1698765432.obj`).
+- **Generate a 3D Asset**:
+  - **Purpose**: Produces a 3D model (e.g., OBJ/GLB) from a text prompt via a two-step process (image generation + conversion).
+  - **Command**: `generate_3d_asset prompt:"isometric 3D castle"`
+  - **Output**: Saves files like `3d_model_generate_3d_asset_1698765432.obj` and returns their paths.
 
-### Using with Claude Desktop
-If integrated with Claude Desktop (see [Configuration](#configuration)), simply type the commands above in the Claude interface, and the assets will be generated and saved.
+With Claude Desktop, type these commands directly in the interface after configuration (see below).
 
 ---
 
 ## Configuration
 
-The server offers several configuration options that can be customized to suit your needs.
+Customize the server with these options:
 
-### Working Directory
-You can specify a custom working directory as a command-line argument:
-```bash
-node index.js /path/to/custom/directory
-```
-If not specified, the current working directory (`process.cwd()`) is used by default.
+- **Working Directory**: Set a custom save location:
+  ```bash
+  node index.js /path/to/directory
+  ```
 
-### Authentication for Hugging Face Spaces
-If the Hugging Face Spaces you're connecting to require authentication, you can provide credentials via environment variables:
+- **Hugging Face Authentication**: Required for API access, edit `.env`:
+  ```plaintext
+  HF_TOKEN=your_hf_token
+  GRADIO_USERNAME=your_username
+  GRADIO_PASSWORD=your_password
+  ```
 
-1. **Create a `.env` file**: Copy the provided `.env.example` file and rename it to `.env`.
-2. **Set your credentials**:
-   ```
-   GRADIO_USERNAME=your_username_here
-   GRADIO_PASSWORD=your_password_here
-   ```
+- **Transport Mode**:
+  - **Stdio (default)**: Local use (e.g., with Claude Desktop).
+  - **SSE**: Remote access:
+    ```bash
+    node index.js --sse  # HTTP
+    node index.js --sse --https  # HTTPS (requires ssl/key.pem and ssl/cert.pem)
+    ```
 
-The server will automatically use these credentials when connecting to the Hugging Face Spaces.
-
-### Transport Mode
-The server supports two transport modes:
-- **StdioServerTransport** (default): For local integration with Claude Desktop.
-- **SSEServerTransport**: For remote access via HTTP.
-To use SSE transport, run the server with the `--sse` flag:
-```bash
-node index.js --sse
-```
-
-For secure HTTPS communication, add the `--https` flag:
-```bash
-node index.js --sse --https
-```
-
-You'll need SSL certificates in the `ssl` directory (key.pem and cert.pem). If they don't exist, the server will provide instructions for creating self-signed certificates.
-
-You can also specify a custom port for the SSE server in your `.env` file:
-```
-PORT=3000
-```
-
-For multi-client support, each client should include a unique client ID in their requests:
-```
-GET /sse?clientId=unique-client-id
-POST /messages with header X-Client-ID: unique-client-id
-```
-```
-
-### Configuring for Claude Desktop
-To integrate with Claude Desktop:
-
-1. **Locate the Configuration File**:
-   - **MacOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-   - **Linux**: `~/.config/Claude/claude_desktop_config.json` (if supported)
-
-2. **Edit the Configuration**:
-   Add an entry for this server:
-   ```json
-   {
-     "mcpServers": {
-       "game-asset-generator": {
-         "command": "node",
-         "args": ["/full/path/to/game-asset-generator/index.js"]
+- **Claude Desktop Setup**: 
+  1. Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (MacOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
+  2. Add:
+     ```json
+     {
+       "mcpServers": {
+         "game-asset-generator": {
+           "command": "node",
+           "args": ["/full/path/to/game-asset-generator/index.js"]
+         }
        }
      }
-   }
-   ```
+     ```
+  3. Restart Claude Desktop.
 
-3. **Restart Claude Desktop**: The server will now launch automatically when needed.
-
----
-
-## API Endpoints
-
-The backend communicates with the following Hugging Face Spaces APIs via Gradio clients:
-
-### 2D Asset Generation
-- **Space**: `mubarak-alketbi/gokaygokay-Flux-2D-Game-Assets-LoRA`
-- **Endpoint**: `/predict`
-- **Input**: 
-  ```json
-  { "prompt": "string" }
-  ```
-- **Output**: Image URL or binary data.
-
-### 3D Asset Image Generation
-- **Space**: `mubarak-alketbi/gokaygokay-Flux-Game-Assets-LoRA-v2`
-- **Endpoint**: `/predict`
-- **Input**: 
-  ```json
-  { "prompt": "string" }
-  ```
-- **Output**: Image URL or binary data.
-
-### 3D Model Conversion
-- **Space**: `TencentARC/InstantMesh`
-- **Endpoint**: `/predict` (assumed based on typical Gradio setups)
-- **Input**: 
-  ```json
-  { "image": "file_data" }
-  ```
-- **Output**: 3D model file (OBJ or GLB format).
-
-These endpoints are abstracted by the MCP server, so users don't need to interact with them directly.
+For detailed setup, see the [Claude Desktop MCP Guide](https://modelcontextprotocol.io/quickstart/user).
 
 ---
+
 ## File Management
 
-- **Storage Location**: Files are saved in the current working directory by default.
-- **Naming Convention**: Files are named with the tool prefix and a timestamp (e.g., `2d_asset_generate_2d_asset_1698765432.png`).
-- **Resource Management**: The MCP server supports both listing and reading resources:
-  - **Resource Listing**: Lists all generated files with metadata.
-  - **Resource Reading**: Allows clients to access the contents of generated files.
-  - **Resource Templates**: Supports URI templates like `asset://{type}/{id}` for filtering resources by type.
-- **Security**: Implements path validation to prevent directory traversal attacks.
-
-To change the storage location, see [Configuration](#configuration).
-To change the storage location, see [Configuration](#configuration).
-
----
-
-## Backend Architecture
-
-The backend is built with Node.js and JavaScript (ES modules), structured as follows:
-
-- **index.js**: Main entry point, sets up the MCP server and defines tools.
-- **Tools**:
-  - `generate_2d_asset`: Handles 2D generation logic with input validation.
-  - `generate_3d_asset`: Manages the 3D pipeline (image generation + conversion) with input validation.
-- **Resource Handlers**:
-  - `resources/list`: Lists all generated assets with proper MIME type detection and filtering support.
-  - `resources/read`: Allows reading the contents of generated assets with template URI support.
-- **Security Features**:
-  - Zod schema validation for robust input validation
-  - Path traversal prevention
-  - HTTPS support for secure remote communication
-  - Proper error handling
-- **Logging**: Comprehensive logging for debugging and monitoring.
-- **Dependencies**:
-  - `@gradio/client`: For interacting with Hugging Face Spaces.
-  - `@modelcontextprotocol/sdk`: For MCP server implementation.
-  - `zod`: For schema validation and input sanitization.
-
-The server listens for MCP requests, processes them asynchronously, and writes files to disk.
+- **Storage Location**: Assets are saved in `./assets` within the working directory by default.
+- **Naming Convention**: Files use a prefix and timestamp (e.g., `2d_asset_generate_2d_asset_1698765432.png`).
+- **Customization**: Change the storage location by setting a custom working directory:
+  ```bash
+  node index.js /path/to/custom/directory
+  ```
+- **Resource Access**: List and read assets via MCP with URIs like `asset://{type}/{id}`.
 
 ---
 
 ## MCP Integration
 
-The Model Context Protocol (MCP) enables this project to act as a tool server for AI assistants. Key aspects:
-
-- **Tool Definitions**: Exposed as `generate_2d_asset` and `generate_3d_asset`.
-- **Resource Management**: Full support for listing and reading resources with template URI capabilities.
-- **URI Scheme**: Uses `asset://` URI scheme for resources, with support for templated URIs like `asset://{type}/{id}`.
-- **Request Handling**: The server parses MCP commands, executes the appropriate tool, and returns file paths.
-- **Multi-Client Support**: Enhanced SSE transport for multiple simultaneous connections.
-- **Secure Communication**: Optional HTTPS support for secure remote access.
-- **Compatibility**: Works with any MCP client, with specific support for Claude Desktop.
-
-See [Configuration](#configuration) for setup instructions.
+The Model Context Protocol (MCP) lets this tool act as a server for AI clients. MCP is a standard for connecting applications to AI models securely. Key features:
+- **Tools**: `generate_2d_asset` and `generate_3d_asset`.
+- **Resources**: Managed via `asset://` URIs.
+- **Compatibility**: Works with Claude Desktop and other MCP clients.
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
-- **API Errors**:
-  - **Cause**: Network issues or rate limits on Hugging Face Spaces.
-  - **Solution**: Check the console logs and retry after a delay.
-- **Authentication Errors**:
-  - **Cause**: Incorrect credentials for private Hugging Face Spaces.
-  - **Solution**: Verify your username and password in the `.env` file.
-- **ES Modules Error**:
-  - **Cause**: Node.js trying to run the code as CommonJS instead of ES modules.
-  - **Solution**: Ensure the package.json has `"type": "module"` field.
-- **File Saving Issues**:
-  - **Cause**: Insufficient permissions in the working directory.
-  - **Solution**: Ensure the directory is writable or specify a different working directory.
-- **MCP Connection Failed**:
-  - **Cause**: Misconfigured client or server not running.
-  - **Solution**: Verify the server is active and the client config is correct.
-- **Rate Limiting**:
-  - **Cause**: Too many requests in a short period.
-  - **Solution**: The server implements rate limiting to prevent abuse. Wait and try again.
-- **SSL Certificate Issues**:
-  - **Cause**: Missing or invalid SSL certificates when using HTTPS.
-  - **Solution**: Generate valid certificates in the `ssl` directory using OpenSSL.
-- **Client ID Not Found**:
-  - **Cause**: When using multi-client SSE, a message was sent with an unknown client ID.
-  - **Solution**: Ensure the client establishes an SSE connection before sending messages.
+- **API Errors**: Check network or rate limits; see logs in `./logs/server.log`.
+- **Authentication Issues**: Verify `.env` credentials.
+- **ES Modules Error**: Use Node.js 16+ (`node --version`).
+- **Logs**: View detailed logs:
+  ```bash
+  tail -f ./logs/server.log
+  ```
 
-### Debugging Tips
-- The server includes comprehensive logging that outputs timestamps and operation details.
-- Check the console output for detailed logs of each operation.
-- Use the `--sse` flag to run the server with SSE transport for easier debugging with web tools.
-- Test API endpoints manually using tools like `curl` or Postman.
+---
+
+## Advanced
+
+### API Endpoints
+The server interacts with these Hugging Face Spaces APIs (abstracted via MCP):
+
+- **2D Asset Generation**: `mubarak-alketbi/gokaygokay-Flux-2D-Game-Assets-LoRA/predict`
+- **3D Asset Image Generation**: `mubarak-alketbi/gokaygokay-Flux-Game-Assets-LoRA-v2/predict`
+- **3D Model Conversion**: `TencentARC/InstantMesh/predict`
+
+### Backend Architecture
+Built with Node.js and ES modules:
+- **index.js**: Core server logic and tool definitions.
+- **Dependencies**: `@gradio/client`, `@modelcontextprotocol/sdk`, `zod`, `express`.
+- **Security**: Zod validation, path traversal prevention, HTTPS support.
 
 ---
 
@@ -378,7 +238,3 @@ Please follow standard coding conventions and include tests where applicable.
 ## License
 
 This project is licensed under the **MIT License**. See the `LICENSE` file in the repository for full details.
-
----
-
-This `README.md` provides an exhaustive overview of the Game Asset Generator project, from its core idea to detailed setup and usage instructions. It's designed to empower users and developers alike to make the most of this AI-driven toolset. Happy asset creation!
