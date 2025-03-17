@@ -48,7 +48,7 @@ The backend is implemented as an MCP server, exposing these capabilities as tool
 
 ## How It Works
 
-The project operates as a pipeline that connects user inputs to AI models and delivers usable game assets. Here’s a step-by-step breakdown:
+The project operates as a pipeline that connects user inputs to AI models and delivers usable game assets. Here's a step-by-step breakdown:
 
 1. **User Input**: The user provides a text prompt (e.g., "pixel art sword" or "isometric 3D castle").
 2. **MCP Server**: The prompt is received by the MCP server, which routes it to the appropriate tool:
@@ -90,20 +90,28 @@ Follow these steps to set up the project locally:
    ```bash
    npm install
    ```
-3. **Run the Server**:
-   The project is implemented in JavaScript with ES modules.
+
+3. **Configure Authentication (Optional)**:
+   If you need to access private Hugging Face Spaces:
    ```bash
-   node index.js
-   ```
+   cp .env.example .env
+   # Edit .env with your credentials
    ```
 
 4. **Run the Server**:
    Start the MCP server:
    ```bash
+   # Basic usage
    node index.js
+   
+   # With custom working directory
+   node index.js /path/to/custom/directory
+   
+   # With SSE transport for remote access
+   node index.js --sse
    ```
 
-The server will start listening for MCP requests. You’re now ready to generate assets!
+The server will start listening for MCP requests. You're now ready to generate assets!
 
 ---
 
@@ -226,7 +234,7 @@ The backend communicates with the following Hugging Face Spaces APIs via Gradio 
   ```
 - **Output**: 3D model file (OBJ or GLB format).
 
-These endpoints are abstracted by the MCP server, so users don’t need to interact with them directly.
+These endpoints are abstracted by the MCP server, so users don't need to interact with them directly.
 
 ---
 
@@ -327,4 +335,4 @@ This project is licensed under the **MIT License**. See the `LICENSE` file in th
 
 ---
 
-This `README.md` provides an exhaustive overview of the Game Asset Generator project, from its core idea to detailed setup and usage instructions. It’s designed to empower users and developers alike to make the most of this AI-driven toolset. Happy asset creation!
+This `README.md` provides an exhaustive overview of the Game Asset Generator project, from its core idea to detailed setup and usage instructions. It's designed to empower users and developers alike to make the most of this AI-driven toolset. Happy asset creation!
