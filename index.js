@@ -104,7 +104,7 @@ async function logOperation(toolName, operationId, status, details = {}) {
 }
 
 // Retry function with exponential backoff
-async function retryWithBackoff(operation, maxRetries = 3, initialDelay = 5000) {
+async function retryWithBackoff(operation, operationId = null, maxRetries = 3, initialDelay = 5000) {
   let retries = 0;
   let delay = initialDelay;
   
@@ -131,9 +131,9 @@ async function retryWithBackoff(operation, maxRetries = 3, initialDelay = 5000) 
         const waitMessage = `GPU quota exceeded. Waiting for ${waitTimeSeconds} seconds before retry ${retries}/${maxRetries}`;
         await log('WARN', waitMessage);
         
-        // If this is part of a 3D asset generation operation, we could update the client here
-        // This would require a mechanism to send updates to the client
-        if (global.operationUpdates && global.operationUpdates[operationId]) {
+        // If this is part of a 3D asset generation operation, update the client
+        // Only if operationId is provided and the updates object exists
+        if (operationId && global.operationUpdates && global.operationUpdates[operationId]) {
           global.operationUpdates[operationId].push({
             status: "WAITING",
             message: waitMessage,
@@ -391,7 +391,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 parameters: { num_inference_steps: 50 },
                 provider: "hf-inference",
               });
-            });
+            }, operationId);
             
             if (!image) {
               throw new Error("No image returned from 3D image generation API");
@@ -413,7 +413,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               return await clientInstantMesh.predict("/check_input_image", [
                 new File([imageFile], path.basename(imagePath), { type: "image/png" })
               ]);
-            });
+            }, operationId);
             
             await logOperation(toolName, operationId, 'PROCESSING', { step: 'Image validation complete' });
             
@@ -425,7 +425,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 new File([imageFile], path.basename(imagePath), { type: "image/png" }),
                 true // Remove background
               ]);
-            });
+            }, operationId);
             
             if (!preprocessResult || !preprocessResult.data) {
               throw new Error("Image preprocessing failed");
@@ -459,7 +459,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 75, // Sample steps (between 30 and 75)
                 42  // Seed value
               ]);
-            });
+            }, operationId);
             
             if (!mvsResult || !mvsResult.data) {
               throw new Error("Multi-view generation failed");
@@ -490,7 +490,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             // This step is particularly prone to GPU quota errors, so use retry with backoff
             const modelResult = await retryWithBackoff(async () => {
               return await clientInstantMesh.predict("/make3d", []);
-            }, 5); // More retries for this critical step
+            }, operationId, 5); // Pass operationId and more retries for this critical step
             
             if (!modelResult || !modelResult.data || !modelResult.data.length) {
               throw new Error("3D model generation failed");
