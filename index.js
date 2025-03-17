@@ -17,6 +17,8 @@ import path from "path";
 import express from "express";
 import crypto from "crypto";
 import dotenv from "dotenv";
+import { z } from "zod";
+import https from "https";
 
 // Load environment variables from .env file
 dotenv.config();
@@ -72,6 +74,15 @@ function checkRateLimit(clientId, limit = 10, windowMs = 60000) {
   return true;
 }
 await fs.mkdir(workDir, { recursive: true });
+
+// Define Zod schemas for input validation
+const schema2D = z.object({
+  prompt: z.string().min(1).max(500).transform(val => sanitizePrompt(val))
+});
+
+const schema3D = z.object({
+  prompt: z.string().min(1).max(500).transform(val => sanitizePrompt(val))
+});
 
 // Tool definitions
 const TOOLS = {
@@ -153,14 +164,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     if (toolName === TOOLS.GENERATE_2D_ASSET.name) {
-      // Sanitize and validate prompt
-      const prompt = sanitizePrompt(args.prompt);
-      if (!prompt) {
-        throw new Error("Invalid or empty prompt");
-      }
+      // Validate input using Zod schema
+      try {
+        const { prompt } = schema2D.parse(args);
+        if (!prompt) {
+          throw new Error("Invalid or empty prompt");
+        }
 
-      await log(`Generating 2D asset with prompt: "${prompt}"`);
-      
+        await log(`Generating 2D asset with prompt: "${prompt}"`);
+      } catch (validationError) {
+        throw new Error(`Validation error: ${validationError.message}`);
+      }
       try {
         // Generate 2D asset using the correct predict method and parameters
         // Note: The API docs show null as parameter, but we're assuming prompt is needed
@@ -203,13 +217,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (toolName === TOOLS.GENERATE_3D_ASSET.name) {
-      // Sanitize and validate prompt
-      const prompt = sanitizePrompt(args.prompt);
-      if (!prompt) {
-        throw new Error("Invalid or empty prompt");
-      }
+      // Validate input using Zod schema
+      try {
+        const { prompt } = schema3D.parse(args);
+        if (!prompt) {
+          throw new Error("Invalid or empty prompt");
+        }
 
-      await log(`Generating 3D asset with prompt: "${prompt}"`);
+        await log(`Generating 3D asset with prompt: "${prompt}"`);
+      } catch (validationError) {
+        throw new Error(`Validation error: ${validationError.message}`);
+      }
       
       try {
         // Step 1: Generate 3D asset image using the correct predict method
@@ -354,6 +372,16 @@ function generateUniqueFilename(prefix, ext, toolName) {
   return `${prefix}_${toolName}_${timestamp}_${uniqueId}.${ext}`;
 }
 
+// Parse resource URI templates
+function parseResourceUri(uri) {
+  // Support for templated URIs like asset://{type}/{id}
+  const match = uri.match(/^asset:\/\/(?:([^\/]+)\/)?(.+)$/);
+  if (!match) return null;
+  
+  const [, type, id] = match;
+  return { type, id };
+}
+
 // Helper to get MIME type from filename
 function getMimeType(filename) {
   if (filename.endsWith(".png")) return "image/png";
@@ -447,10 +475,22 @@ async function saveFileFromData(data, prefix, ext, toolName) {
 }
 
 // Resource listing (for file management)
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
+server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
   await log("Listing resources");
   
   try {
+    // Check if there's a filter in the request
+    const uriTemplate = request.params?.uriTemplate;
+    let typeFilter = null;
+    
+    if (uriTemplate) {
+      const templateMatch = uriTemplate.match(/^asset:\/\/([^\/]+)\/.*$/);
+      if (templateMatch) {
+        typeFilter = templateMatch[1];
+        await log(`Filtering resources by type: ${typeFilter}`);
+      }
+    }
+    
     const files = await fs.readdir(assetsDir, { withFileTypes: true });
     const resources = await Promise.all(
       files
@@ -458,19 +498,31 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
         .map(async (file) => {
           const filePath = path.join(assetsDir, file.name);
           const stats = await fs.stat(filePath);
+          const filenameParts = file.name.split('_');
+          const assetType = filenameParts[0] || 'unknown';
+          const toolOrigin = filenameParts[1] || 'unknown';
+          
+          // Create a structured URI that includes the type
+          const uri = `asset://${assetType}/${file.name}`;
           
           return {
-            uri: `asset://${file.name}`,
+            uri,
             name: file.name,
             mimetype: getMimeType(file.name),
             created: stats.ctime.toISOString(),
             size: stats.size,
-            toolOrigin: file.name.split('_')[1] || 'unknown' // Extract tool name from filename
+            toolOrigin,
+            assetType
           };
         })
     );
     
-    return { resources };
+    // Apply type filter if specified
+    const filteredResources = typeFilter
+      ? resources.filter(r => r.assetType === typeFilter)
+      : resources;
+    
+    return { resources: filteredResources };
   } catch (error) {
     await log(`Error listing resources: ${error.message}`);
     return { resources: [] };
@@ -483,8 +535,22 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   await log(`Reading resource: ${uri}`);
   
   if (uri.startsWith("asset://")) {
-    const filename = uri.replace("asset://", "");
-    const filePath = path.join(assetsDir, filename);
+    // Parse the URI to handle templated URIs
+    const parsedUri = parseResourceUri(uri);
+    
+    if (!parsedUri) {
+      throw new Error("Invalid resource URI format");
+    }
+    
+    // For templated URIs like asset://{type}/{id}, the filename is in the id part
+    // For traditional URIs like asset://filename, the id is the filename
+    const filename = parsedUri.type && parsedUri.id.includes('/')
+      ? parsedUri.id
+      : (parsedUri.type ? `${parsedUri.type}/${parsedUri.id}` : parsedUri.id);
+    
+    // Remove any type prefix if it exists
+    const actualFilename = filename.includes('/') ? filename.split('/').pop() : filename;
+    const filePath = path.join(assetsDir, actualFilename);
     
     // Security check: ensure file path is within assetsDir
     if (!filePath.startsWith(assetsDir)) {
@@ -498,7 +564,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       }
       
       const data = await fs.readFile(filePath);
-      const mimetype = getMimeType(filename);
+      const mimetype = getMimeType(actualFilename);
       
       return {
         contents: [{
@@ -571,16 +637,39 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
 async function main() {
   // Check if we should use SSE transport (for remote access)
   const useSSE = process.argv.includes("--sse");
+  const useHttps = process.argv.includes("--https");
   
   if (useSSE) {
     // Setup Express server for SSE transport
     const app = express();
     const port = process.env.PORT || 3000;
     
+    // Store transports by client ID for multi-connection support
+    const transports = new Map();
+    
     app.get("/sse", async (req, res) => {
-      await log("SSE connection established");
+      const clientId = req.query.clientId || crypto.randomUUID();
+      await log(`SSE connection established for client: ${clientId}`);
+      
+      // Set headers for SSE
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      
+      // Create a new transport for this client
       const transport = new SSEServerTransport("/messages", res);
+      transports.set(clientId, transport);
+      
+      // Handle client disconnect
+      req.on('close', () => {
+        transports.delete(clientId);
+        log(`Client ${clientId} disconnected`);
+      });
+      
       await server.connect(transport);
+      
+      // Send initial connection confirmation
+      res.write(`data: ${JSON.stringify({ connected: true, clientId })}\n\n`);
     });
     
     app.post("/messages", express.json(), async (req, res) => {
@@ -592,12 +681,57 @@ async function main() {
         return;
       }
       
+      // Get the transport for this client
+      const transport = transports.get(clientId);
+      if (!transport) {
+        res.status(404).json({ error: "Client not connected" });
+        return;
+      }
+      
       await transport.handlePostMessage(req, res);
     });
     
-    app.listen(port, () => {
-      log(`MCP Game Asset Generator running with SSE transport on port ${port}`);
-    });
+    // Use HTTPS if requested
+    if (useHttps) {
+      try {
+        // Check for SSL certificate files
+        const sslDir = path.join(process.cwd(), 'ssl');
+        const keyPath = path.join(sslDir, 'key.pem');
+        const certPath = path.join(sslDir, 'cert.pem');
+        
+        // Create ssl directory if it doesn't exist
+        await fs.mkdir(sslDir, { recursive: true });
+        
+        // Check if SSL files exist, if not, generate self-signed certificate
+        let key, cert;
+        try {
+          key = await fs.readFile(keyPath);
+          cert = await fs.readFile(certPath);
+          await log("Using existing SSL certificates");
+        } catch (error) {
+          await log("SSL certificates not found, please create them manually");
+          await log("You can generate self-signed certificates with:");
+          await log("openssl req -x509 -newkey rsa:4096 -keyout ssl/key.pem -out ssl/cert.pem -days 365 -nodes");
+          throw new Error("SSL certificates required for HTTPS");
+        }
+        
+        const httpsServer = https.createServer({ key, cert }, app);
+        httpsServer.listen(port, () => {
+          log(`MCP Game Asset Generator running with HTTPS SSE transport on port ${port}`);
+        });
+      } catch (error) {
+        await log(`HTTPS setup failed: ${error.message}`);
+        await log("Falling back to HTTP");
+        app.listen(port, () => {
+          log(`MCP Game Asset Generator running with HTTP SSE transport on port ${port}`);
+        });
+      }
+    } else {
+      // Standard HTTP server
+      app.listen(port, () => {
+        log(`MCP Game Asset Generator running with HTTP SSE transport on port ${port}`);
+      });
+    }
   } else {
     // Use stdio transport for local access (e.g., Claude Desktop)
     const transport = new StdioServerTransport();

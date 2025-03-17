@@ -41,6 +41,10 @@ The backend is implemented as an MCP server, exposing these capabilities as tool
 - **3D Asset Generation**: Generate fully realized 3D models from text prompts, with automatic image-to-model conversion.
 - **MCP Integration**: Seamlessly interact with the generator using MCP-compatible clients, such as Claude Desktop.
 - **File Management**: Automatically save and organize generated assets in the local filesystem.
+- **Resource Templates**: Support for dynamic resource URIs (e.g., `asset://{type}/{id}`) for filtering assets by type.
+- **Robust Input Validation**: Uses Zod schema validation for secure and reliable input processing.
+- **Multi-Client Support**: Enhanced SSE transport with support for multiple simultaneous client connections.
+- **Secure Remote Access**: Optional HTTPS support for secure communication with remote clients.
 - **Extensible Backend**: Built with modularity in mind, allowing for future expansion to additional models or features.
 - **Cross-Platform**: Works on any system with Node.js support (Windows, macOS, Linux).
 
@@ -182,15 +186,28 @@ The server will automatically use these credentials when connecting to the Huggi
 The server supports two transport modes:
 - **StdioServerTransport** (default): For local integration with Claude Desktop.
 - **SSEServerTransport**: For remote access via HTTP.
-
 To use SSE transport, run the server with the `--sse` flag:
 ```bash
 node index.js --sse
 ```
 
+For secure HTTPS communication, add the `--https` flag:
+```bash
+node index.js --sse --https
+```
+
+You'll need SSL certificates in the `ssl` directory (key.pem and cert.pem). If they don't exist, the server will provide instructions for creating self-signed certificates.
+
 You can also specify a custom port for the SSE server in your `.env` file:
 ```
 PORT=3000
+```
+
+For multi-client support, each client should include a unique client ID in their requests:
+```
+GET /sse?clientId=unique-client-id
+POST /messages with header X-Client-ID: unique-client-id
+```
 ```
 
 ### Configuring for Claude Desktop
@@ -252,7 +269,6 @@ The backend communicates with the following Hugging Face Spaces APIs via Gradio 
 These endpoints are abstracted by the MCP server, so users don't need to interact with them directly.
 
 ---
-
 ## File Management
 
 - **Storage Location**: Files are saved in the current working directory by default.
@@ -260,8 +276,10 @@ These endpoints are abstracted by the MCP server, so users don't need to interac
 - **Resource Management**: The MCP server supports both listing and reading resources:
   - **Resource Listing**: Lists all generated files with metadata.
   - **Resource Reading**: Allows clients to access the contents of generated files.
+  - **Resource Templates**: Supports URI templates like `asset://{type}/{id}` for filtering resources by type.
 - **Security**: Implements path validation to prevent directory traversal attacks.
 
+To change the storage location, see [Configuration](#configuration).
 To change the storage location, see [Configuration](#configuration).
 
 ---
@@ -275,16 +293,18 @@ The backend is built with Node.js and JavaScript (ES modules), structured as fol
   - `generate_2d_asset`: Handles 2D generation logic with input validation.
   - `generate_3d_asset`: Manages the 3D pipeline (image generation + conversion) with input validation.
 - **Resource Handlers**:
-  - `resources/list`: Lists all generated assets with proper MIME type detection.
-  - `resources/read`: Allows reading the contents of generated assets.
+  - `resources/list`: Lists all generated assets with proper MIME type detection and filtering support.
+  - `resources/read`: Allows reading the contents of generated assets with template URI support.
 - **Security Features**:
-  - Input validation and sanitization
+  - Zod schema validation for robust input validation
   - Path traversal prevention
+  - HTTPS support for secure remote communication
   - Proper error handling
 - **Logging**: Comprehensive logging for debugging and monitoring.
 - **Dependencies**:
   - `@gradio/client`: For interacting with Hugging Face Spaces.
   - `@modelcontextprotocol/sdk`: For MCP server implementation.
+  - `zod`: For schema validation and input sanitization.
 
 The server listens for MCP requests, processes them asynchronously, and writes files to disk.
 
@@ -295,9 +315,11 @@ The server listens for MCP requests, processes them asynchronously, and writes f
 The Model Context Protocol (MCP) enables this project to act as a tool server for AI assistants. Key aspects:
 
 - **Tool Definitions**: Exposed as `generate_2d_asset` and `generate_3d_asset`.
-- **Resource Management**: Full support for listing and reading resources.
-- **URI Scheme**: Uses `asset://` URI scheme for resources, clearly indicating they are server-managed assets.
+- **Resource Management**: Full support for listing and reading resources with template URI capabilities.
+- **URI Scheme**: Uses `asset://` URI scheme for resources, with support for templated URIs like `asset://{type}/{id}`.
 - **Request Handling**: The server parses MCP commands, executes the appropriate tool, and returns file paths.
+- **Multi-Client Support**: Enhanced SSE transport for multiple simultaneous connections.
+- **Secure Communication**: Optional HTTPS support for secure remote access.
 - **Compatibility**: Works with any MCP client, with specific support for Claude Desktop.
 
 See [Configuration](#configuration) for setup instructions.
@@ -325,6 +347,12 @@ See [Configuration](#configuration) for setup instructions.
 - **Rate Limiting**:
   - **Cause**: Too many requests in a short period.
   - **Solution**: The server implements rate limiting to prevent abuse. Wait and try again.
+- **SSL Certificate Issues**:
+  - **Cause**: Missing or invalid SSL certificates when using HTTPS.
+  - **Solution**: Generate valid certificates in the `ssl` directory using OpenSSL.
+- **Client ID Not Found**:
+  - **Cause**: When using multi-client SSE, a message was sent with an unknown client ID.
+  - **Solution**: Ensure the client establishes an SSE connection before sending messages.
 
 ### Debugging Tips
 - The server includes comprehensive logging that outputs timestamps and operation details.
