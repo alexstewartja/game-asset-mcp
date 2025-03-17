@@ -104,7 +104,7 @@ async function logOperation(toolName, operationId, status, details = {}) {
 }
 
 // Retry function with exponential backoff
-async function retryWithBackoff(operation, operationId = null, maxRetries = 3, initialDelay = 600) {
+async function retryWithBackoff(operation, operationId = null, maxRetries = 3, initialDelay = 5000) {
   let retries = 0;
   let delay = initialDelay;
   
@@ -119,16 +119,37 @@ async function retryWithBackoff(operation, operationId = null, maxRetries = 3, i
         throw error;
       }
       
-      // Check if the error is due to GPU quota
-      const gpuQuotaMatch = error.message?.match(/exceeded your GPU quota.*Please retry in (\d+):(\d+):(\d+)/);
+      // Check if the error is due to GPU quota with improved regex to handle multiple time formats
+      const gpuQuotaMatch = error.message?.match(/exceeded your GPU quota.*(?:retry|wait)\s*(?:in|after)?\s*(?:(\d+):(\d+):(\d+)|(\d+)\s*(?:seconds|s)|(\d+)\s*(?:minutes|m)|(\d+)\s*(?:hours|h))/i);
       if (gpuQuotaMatch) {
-        const hours = parseInt(gpuQuotaMatch[1]) || 0;
-        const minutes = parseInt(gpuQuotaMatch[2]) || 0;
-        const seconds = parseInt(gpuQuotaMatch[3]) || 0;
-        const waitTime = (hours * 3600 + minutes * 60 + seconds) * 1000;
+        let waitTime;
+        let waitTimeSource = "unknown format";
+        
+        if (gpuQuotaMatch[1]) { // HH:MM:SS format
+          const hours = parseInt(gpuQuotaMatch[1]) || 0;
+          const minutes = parseInt(gpuQuotaMatch[2]) || 0;
+          const seconds = parseInt(gpuQuotaMatch[3]) || 0;
+          waitTime = (hours * 3600 + minutes * 60 + seconds) * 1000;
+          waitTimeSource = `${hours}h:${minutes}m:${seconds}s format`;
+        } else if (gpuQuotaMatch[4]) { // Seconds format
+          waitTime = parseInt(gpuQuotaMatch[4]) * 1000;
+          waitTimeSource = `${gpuQuotaMatch[4]} seconds format`;
+        } else if (gpuQuotaMatch[5]) { // Minutes format
+          waitTime = parseInt(gpuQuotaMatch[5]) * 60 * 1000;
+          waitTimeSource = `${gpuQuotaMatch[5]} minutes format`;
+        } else if (gpuQuotaMatch[6]) { // Hours format
+          waitTime = parseInt(gpuQuotaMatch[6]) * 3600 * 1000;
+          waitTimeSource = `${gpuQuotaMatch[6]} hours format`;
+        }
+        
+        // If no valid time was parsed, use a safe default
+        if (!waitTime || waitTime <= 0) {
+          waitTime = 60 * 1000; // Default to 60 seconds
+          waitTimeSource = "default fallback";
+        }
         
         const waitTimeSeconds = Math.ceil(waitTime/1000);
-        const waitMessage = `GPU quota exceeded. Waiting for ${waitTimeSeconds} seconds before retry ${retries}/${maxRetries}`;
+        const waitMessage = `GPU quota exceeded. Waiting for ${waitTimeSeconds} seconds before retry ${retries}/${maxRetries} (detected from ${waitTimeSource})`;
         await log('WARN', waitMessage);
         
         // If this is part of a 3D asset generation operation, update the client
@@ -145,6 +166,24 @@ async function retryWithBackoff(operation, operationId = null, maxRetries = 3, i
         }
         
         await new Promise(resolve => setTimeout(resolve, waitTime + 1000)); // Add 1 second buffer
+      } else if (error.message?.includes("GPU quota") || error.message?.includes("quota exceeded")) {
+        // GPU quota error detected but format not recognized
+        const defaultDelay = 60 * 1000; // 60 seconds as a safe default
+        await log('WARN', `GPU quota error with unrecognized format: "${error.message}". Using default wait time of ${defaultDelay/1000} seconds before retry ${retries}/${maxRetries}`);
+        
+        // Update operation status if available
+        if (operationId && global.operationUpdates && global.operationUpdates[operationId]) {
+          global.operationUpdates[operationId].push({
+            status: "WAITING",
+            message: `GPU quota exceeded. Using default wait time of ${defaultDelay/1000} seconds before retry ${retries}/${maxRetries}`,
+            retryCount: retries,
+            maxRetries: maxRetries,
+            waitTime: defaultDelay/1000,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, defaultDelay));
       } else {
         // For other errors, use exponential backoff
         await log('WARN', `Operation failed: ${error.message}. Retrying in ${delay/1000} seconds (${retries}/${maxRetries})`);
