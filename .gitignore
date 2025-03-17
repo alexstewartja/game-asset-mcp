@@ -1,3 +1,4 @@
 node_modules/
 roo_docs/
 tech_docs/
+.env
