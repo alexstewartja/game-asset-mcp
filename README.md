@@ -90,11 +90,11 @@ Follow these steps to set up the project locally:
    ```bash
    npm install
    ```
-
-3. **Compile TypeScript Code**:
-   The project is written in TypeScript for type safety and maintainability. Compile it to JavaScript:
+3. **Run the Server**:
+   The project is implemented in JavaScript with ES modules.
    ```bash
-   npx tsc index.ts --target esnext --module node16
+   node index.js
+   ```
    ```
 
 4. **Run the Server**:
@@ -205,8 +205,11 @@ These endpoints are abstracted by the MCP server, so users don’t need to inter
 ## File Management
 
 - **Storage Location**: Files are saved in the current working directory by default.
-- **Naming Convention**: Files are named with the tool prefix and a timestamp (e.g., `generate_2d_asset_1698765432.png`).
-- **Resource Listing**: The MCP server supports listing available files, accessible via MCP clients.
+- **Naming Convention**: Files are named with the tool prefix and a timestamp (e.g., `2d_asset_generate_2d_asset_1698765432.png`).
+- **Resource Management**: The MCP server supports both listing and reading resources:
+  - **Resource Listing**: Lists all generated files with metadata.
+  - **Resource Reading**: Allows clients to access the contents of generated files.
+- **Security**: Implements path validation to prevent directory traversal attacks.
 
 To change the storage location, see [Configuration](#configuration).
 
@@ -214,15 +217,23 @@ To change the storage location, see [Configuration](#configuration).
 
 ## Backend Architecture
 
-The backend is built with Node.js and TypeScript, structured as follows:
+The backend is built with Node.js and JavaScript (ES modules), structured as follows:
 
-- **index.ts**: Main entry point, sets up the MCP server and defines tools.
+- **index.js**: Main entry point, sets up the MCP server and defines tools.
 - **Tools**:
-  - `generate_2d_asset`: Handles 2D generation logic.
-  - `generate_3d_asset`: Manages the 3D pipeline (image generation + conversion).
+  - `generate_2d_asset`: Handles 2D generation logic with input validation.
+  - `generate_3d_asset`: Manages the 3D pipeline (image generation + conversion) with input validation.
+- **Resource Handlers**:
+  - `resources/list`: Lists all generated assets with proper MIME type detection.
+  - `resources/read`: Allows reading the contents of generated assets.
+- **Security Features**:
+  - Input validation and sanitization
+  - Path traversal prevention
+  - Proper error handling
+- **Logging**: Comprehensive logging for debugging and monitoring.
 - **Dependencies**:
-  - `gradio-client`: For interacting with Hugging Face Spaces.
-  - MCP-specific libraries (assumed to be included via `npm install`).
+  - `@gradio/client`: For interacting with Hugging Face Spaces.
+  - `@modelcontextprotocol/sdk`: For MCP server implementation.
 
 The server listens for MCP requests, processes them asynchronously, and writes files to disk.
 
@@ -233,6 +244,8 @@ The server listens for MCP requests, processes them asynchronously, and writes f
 The Model Context Protocol (MCP) enables this project to act as a tool server for AI assistants. Key aspects:
 
 - **Tool Definitions**: Exposed as `generate_2d_asset` and `generate_3d_asset`.
+- **Resource Management**: Full support for listing and reading resources.
+- **URI Scheme**: Uses `asset://` URI scheme for resources, clearly indicating they are server-managed assets.
 - **Request Handling**: The server parses MCP commands, executes the appropriate tool, and returns file paths.
 - **Compatibility**: Works with any MCP client, with specific support for Claude Desktop.
 
@@ -254,7 +267,8 @@ See [Configuration](#configuration) for setup instructions.
   - **Solution**: Verify the server is active and the client config is correct.
 
 ### Debugging Tips
-- Run the server with `node index.js --verbose` (if implemented) for detailed logs.
+- The server includes comprehensive logging that outputs timestamps and operation details.
+- Check the console output for detailed logs of each operation.
 - Test API endpoints manually using tools like `curl` or Postman.
 
 ---
