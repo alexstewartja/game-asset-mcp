@@ -282,15 +282,11 @@ const TOOLS = {
     }
   }
 };
-// Get authentication credentials from environment variables
-const gradioUsername = process.env.GRADIO_USERNAME;
-const gradioPassword = process.env.GRADIO_PASSWORD;
+// Get HF token from environment variables
 const hfToken = process.env.HF_TOKEN;
 
-// Authentication options for Gradio
-const authOptions = gradioUsername && gradioPassword
-  ? { auth: [gradioUsername, gradioPassword] }
-  : {};
+// Authentication options for Gradio using HF token
+const authOptions = { hf_token: hfToken };
 
 // Connect to Hugging Face Spaces and Inference API
 let clientInstantMesh;
@@ -314,7 +310,9 @@ try {
 // Connect to InstantMesh API using Gradio client (this one works correctly)
 try {
   await log('INFO', "Connecting to InstantMesh API...");
-  clientInstantMesh = await Client.connect("TencentARC/InstantMesh", authOptions);
+  await log('INFO', "Using HF token authentication for InstantMesh API");
+  
+  clientInstantMesh = await Client.connect("mubarak-alketbi/InstantMesh", authOptions);
   await log('INFO', "Successfully connected to InstantMesh API");
 } catch (error) {
   await log('ERROR', `Error connecting to InstantMesh API: ${error.message}`);

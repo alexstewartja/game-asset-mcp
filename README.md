@@ -1,6 +1,6 @@
 # Game Asset Generator using MCP and Hugging Face Spaces
 
-This project is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "TencentARC/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop.
+This project is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "mubarak-alketbi/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop.
 
 <p align="center">
   <a href="https://pay.ziina.com/MubarakHAlketbi">
@@ -33,7 +33,7 @@ This project is an innovative tool that simplifies game asset creation by harnes
 
 ## Project Overview
 
-The **Game Asset Generator** (version 0.1.0) is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "TencentARC/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop. This initial release integrates with MCP using the TypeScript SDK version 1.7.0 and supports both 2D and 3D asset generation.
+The **Game Asset Generator** (version 0.1.0) is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "mubarak-alketbi/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop. This initial release integrates with MCP using the TypeScript SDK version 1.7.0 and supports both 2D and 3D asset generation.
 
 ---
 
@@ -60,7 +60,7 @@ The Game Asset Generator transforms text prompts into game-ready assets through 
 2. **MCP Server**: Routes the prompt to the appropriate tool (`generate_2d_asset` or `generate_3d_asset`).
 3. **AI Model Interaction**: 
    - 2D assets use "gokaygokay/Flux-2D-Game-Assets-LoRA."
-   - 3D assets use "gokaygokay/Flux-Game-Assets-LoRA-v2" for images, then "TencentARC/InstantMesh" for 3D conversion.
+   - 3D assets use "gokaygokay/Flux-Game-Assets-LoRA-v2" for images, then "mubarak-alketbi/InstantMesh" for 3D conversion.
 4. **File Output**: Saves the asset (image for 2D, model file for 3D) locally.
 5. **Response**: Returns the file path for immediate use.
 
@@ -149,10 +149,14 @@ Customize the server with these options:
 
 - **Hugging Face Authentication**: Required for API access, edit `.env`:
   ```plaintext
+  # Required for all API access
   HF_TOKEN=your_hf_token
-  GRADIO_USERNAME=your_username
-  GRADIO_PASSWORD=your_password
   ```
+  
+  The server uses HF token authentication for all Hugging Face services, including:
+  - Hugging Face Inference API for 2D and 3D image generation
+  - InstantMesh API for 3D model conversion
+  - Hunyuan3D-2 API for 3D model generation
 
 - **Transport Mode**:
   - **Stdio (default)**: Local use (e.g., with Claude Desktop).
@@ -221,7 +225,7 @@ The server interacts with these Hugging Face Spaces APIs (abstracted via MCP):
 
 - **2D Asset Generation**: `mubarak-alketbi/gokaygokay-Flux-2D-Game-Assets-LoRA/predict`
 - **3D Asset Image Generation**: `mubarak-alketbi/gokaygokay-Flux-Game-Assets-LoRA-v2/predict`
-- **3D Model Conversion**: `TencentARC/InstantMesh/predict`
+- **3D Model Conversion**: `mubarak-alketbi/InstantMesh/predict`
 
 ### Versioning
 The Game Asset Generator follows semantic versioning (SemVer):
