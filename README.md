@@ -1,6 +1,6 @@
 # Game Asset Generator using MCP and Hugging Face Spaces
 
-This project is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "TencentARC/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop.
+This project is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "mubarak-alketbi/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop.
 
 <p align="center">
   <a href="https://pay.ziina.com/MubarakHAlketbi">
@@ -32,8 +32,7 @@ This project is an innovative tool that simplifies game asset creation by harnes
 ---
 
 ## Project Overview
-
-The **Game Asset Generator** (version 0.1.0) is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "TencentARC/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop. This initial release integrates with MCP using the TypeScript SDK version 1.7.0 and supports both 2D and 3D asset generation.
+The **Game Asset Generator** (version 0.2.0) is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates AI models from Hugging Face—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and either "mubarak-alketbi/InstantMesh" or "mubarak-alketbi/Hunyuan3D-2"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop. This release integrates with MCP using the TypeScript SDK version 1.7.0 and supports both 2D and 3D asset generation with improved Hunyuan3D integration.
 
 ---
 
@@ -58,16 +57,20 @@ The Game Asset Generator transforms text prompts into game-ready assets through 
 
 1. **User Input**: Provide a text prompt (e.g., "pixel art sword" or "isometric 3D castle").
 2. **MCP Server**: Routes the prompt to the appropriate tool (`generate_2d_asset` or `generate_3d_asset`).
-3. **AI Model Interaction**: 
-   - 2D assets use "gokaygokay/Flux-2D-Game-Assets-LoRA."
-   - 3D assets use "gokaygokay/Flux-Game-Assets-LoRA-v2" for images, then "TencentARC/InstantMesh" for 3D conversion.
-4. **File Output**: Saves the asset (image for 2D, model file for 3D) locally.
-5. **Response**: Returns the file path for immediate use.
+3. **AI Model Interaction**:
+   - **2D Assets**: Uses the Hugging Face Inference API with "gokaygokay/Flux-2D-Game-Assets-LoRA" model.
+   - **3D Assets**:
+     - First generates an image using the Hugging Face Inference API with "gokaygokay/Flux-Game-Assets-LoRA-v2" model.
+     - Then converts the image to a 3D model using either:
+       - **InstantMesh**: A multi-step process with preprocessing, multi-view generation, and 3D model creation.
+       - **Hunyuan3D-2**: A streamlined process using the /generation_all endpoint for direct 3D model generation.
+4. **File Output**: Saves the asset (image for 2D, OBJ and GLB files for 3D) locally in the assets directory.
+5. **Response**: Returns the resource URI (e.g., `asset://3d_model/filename.glb`) for immediate use.
 
 Here's a visual overview:
 
 ```
-User Prompt → MCP Server → AI Model(s) → Local File → File Path Response
+User Prompt → MCP Server → AI Model(s) → Local File → Resource URI Response
 ```
 
 ---
@@ -127,12 +130,22 @@ Interact with the server via an MCP client (e.g., Claude Desktop) or programmati
 - **Generate a 2D Asset**:
   - **Purpose**: Creates a 2D image (e.g., PNG) from a text prompt.
   - **Command**: `generate_2d_asset prompt:"pixel art sword"`
-  - **Output**: Saves a file like `2d_asset_generate_2d_asset_1698765432.png` and returns its path.
+  - **Output**: Saves a file like `2d_asset_generate_2d_asset_1698765432.png` and returns its resource URI.
+  - **Enhancement**: The system automatically enhances your prompt with "high detailed, complete object, not cut off, white solid background" for better results.
 
 - **Generate a 3D Asset**:
-  - **Purpose**: Produces a 3D model (e.g., OBJ/GLB) from a text prompt via a two-step process (image generation + conversion).
+  - **Purpose**: Produces 3D models (both OBJ and GLB formats) from a text prompt.
   - **Command**: `generate_3d_asset prompt:"isometric 3D castle"`
-  - **Output**: Saves files like `3d_model_generate_3d_asset_1698765432.obj` and returns their paths.
+  - **Process**:
+    - First generates a 2D image from your prompt
+    - Then converts it to 3D using either InstantMesh or Hunyuan3D-2 (based on your MODEL_SPACE setting)
+    - For long-running operations, provides immediate feedback with operation ID and status updates
+  - **Output**: Saves multiple files (including the intermediate 2D image, processed image, and final 3D models) and returns their resource URIs.
+  - **Enhancement**: The system automatically enhances your prompt and uses optimized parameters for better results.
+
+You can also use prompts for more natural interaction:
+- `generate_2d_sprite prompt:"pixel art sword"`
+- `generate_3d_model prompt:"isometric 3D castle"`
 
 With Claude Desktop, type these commands directly in the interface after configuration (see below).
 
@@ -147,12 +160,29 @@ Customize the server with these options:
   node index.js /path/to/directory
   ```
 
-- **Hugging Face Authentication**: Required for API access, edit `.env`:
+- **Hugging Face Authentication and Model Space**: Required for API access, edit `.env`:
   ```plaintext
+  # Required for all API access
   HF_TOKEN=your_hf_token
-  GRADIO_USERNAME=your_username
-  GRADIO_PASSWORD=your_password
+
+  # Choose which 3D model space to use (must be duplicated to your account)
+  MODEL_SPACE=your-username/InstantMesh
+  # OR
+  MODEL_SPACE=your-username/Hunyuan3D-2
+  
+  # Optional: Port for SSE transport (default: 3000)
+  PORT=3000
   ```
+  
+  The server uses HF token authentication for all Hugging Face services, including:
+  - Hugging Face Inference API for 2D and 3D image generation
+  - Your duplicated space (InstantMesh or Hunyuan3D-2) for 3D model conversion
+  
+  **IMPORTANT**: You must duplicate one of the following spaces to your Hugging Face account:
+  - Option 1: [InstantMesh Space](https://huggingface.co/spaces/mubarak-alketbi/InstantMesh)
+  - Option 2: [Hunyuan3D-2 Space](https://huggingface.co/spaces/mubarak-alketbi/Hunyuan3D-2)
+  
+  The application will automatically detect which space you've duplicated based on the available endpoints.
 
 - **Transport Mode**:
   - **Stdio (default)**: Local use (e.g., with Claude Desktop).
@@ -216,16 +246,24 @@ The Model Context Protocol (MCP) lets this tool act as a server for AI clients. 
 
 ## Advanced
 
-### API Endpoints
-The server interacts with these Hugging Face Spaces APIs (abstracted via MCP):
+### API Endpoints and Integration
+The server interacts with these Hugging Face services:
 
-- **2D Asset Generation**: `mubarak-alketbi/gokaygokay-Flux-2D-Game-Assets-LoRA/predict`
-- **3D Asset Image Generation**: `mubarak-alketbi/gokaygokay-Flux-Game-Assets-LoRA-v2/predict`
-- **3D Model Conversion**: `TencentARC/InstantMesh/predict`
+- **2D Asset Generation**: Uses the Hugging Face Inference API with model `gokaygokay/Flux-2D-Game-Assets-LoRA`
+- **3D Asset Image Generation**: Uses the Hugging Face Inference API with model `gokaygokay/Flux-Game-Assets-LoRA-v2`
+- **3D Model Conversion**: Uses one of two options based on your MODEL_SPACE setting:
+  - **InstantMesh**: Uses a multi-step process with these endpoints:
+    - `/check_input_image`: Validates the input image
+    - `/preprocess`: Removes background and prepares the image
+    - `/generate_mvs`: Creates multi-view images
+    - `/make3d`: Generates the final 3D models (OBJ and GLB)
+  - **Hunyuan3D-2**: Uses a streamlined process with:
+    - `/generation_all`: Directly generates 3D models from the input image
+    - Uses optimized parameters (20 steps instead of 50) for faster processing without quality loss
 
 ### Versioning
 The Game Asset Generator follows semantic versioning (SemVer):
-- **Current Version**: 0.1.0 (Initial Release)
+- **Current Version**: 0.2.0 (Hunyuan3D Integration)
 - **MCP SDK Version**: 1.7.0
 - **Version Format**: MAJOR.MINOR.PATCH
   - MAJOR: Breaking changes
@@ -239,9 +277,16 @@ The version is specified in:
 
 ### Backend Architecture
 Built with Node.js and ES modules:
-- **index.js**: Core server logic and tool definitions.
-- **Dependencies**: `@gradio/client`, `@modelcontextprotocol/sdk`, `zod`, `express`.
-- **Security**: Zod validation, path traversal prevention, HTTPS support.
+- **index.js**: Core server logic and tool definitions
+- **Dependencies**:
+  - `@gradio/client`: For Hugging Face Spaces interaction
+  - `@huggingface/inference`: For direct model inference
+  - `@modelcontextprotocol/sdk`: For MCP server implementation
+  - `zod`: For schema validation and input sanitization
+  - `express`: For SSE transport
+  - `dotenv`: For environment variable loading
+- **Security**: Zod validation, path traversal prevention, HTTPS support, rate limiting
+- **Performance**: Asynchronous processing, retry mechanism with exponential backoff, GPU quota handling
 
 ---
 
