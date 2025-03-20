@@ -205,7 +205,7 @@ const MCP_ERROR_CODES = {
 
 // Initialize MCP server
 const server = new Server(
-  { name: "game-asset-generator", version: "0.1.0" }, // Updated to version 0.1.0
+  { name: "game-asset-generator", version: "0.2.0" }, // Updated to version 0.2.0
   {
     capabilities: {
       tools: { list: true, call: true },
@@ -282,14 +282,172 @@ const TOOLS = {
     }
   }
 };
-// Get HF token from environment variables
+// Get environment variables
 const hfToken = process.env.HF_TOKEN;
+const modelSpace = process.env.MODEL_SPACE || "mubarak-alketbi/InstantMesh";
 
+// Space types
+const SPACE_TYPE = {
+  INSTANTMESH: "instantmesh",
+  HUNYUAN3D: "hunyuan3d",
+  UNKNOWN: "unknown"
+};
+
+// Space detection state
+let detectedSpaceType = SPACE_TYPE.UNKNOWN;
+// Validate space format
+function validateSpaceFormat(space) {
+  // Check if the space follows the format "username/space-name"
+  if (!space) {
+    return false;
+  }
+  
+  // Check basic format with regex
+  const spaceRegex = /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$/;
+  if (!spaceRegex.test(space)) {
+    return false;
+  }
+  
+  // Additional validation
+  const parts = space.split('/');
+  if (parts.length !== 2) {
+    return false;
+  }
+  
+  const [username, spaceName] = parts;
+  // Username and space name should be at least 2 characters
+  if (username.length < 2 || spaceName.length < 2) {
+    return false;
+  }
+  
+  return true;
+}
+
+// Detect which space was duplicated by checking available endpoints using view_api()
+async function detectSpaceType(client) {
+  try {
+    await log('INFO', "Detecting space type using view_api()...");
+    
+    // First, check if the space name contains a hint about the type
+    if (modelSpace.toLowerCase().includes("instantmesh")) {
+      detectedSpaceType = SPACE_TYPE.INSTANTMESH;
+      await log('INFO', `Detected space type: InstantMesh (based on space name)`);
+      return SPACE_TYPE.INSTANTMESH;
+    } else if (modelSpace.toLowerCase().includes("hunyuan")) {
+      detectedSpaceType = SPACE_TYPE.HUNYUAN3D;
+      await log('INFO', `Detected space type: Hunyuan3D-2 (based on space name)`);
+      return SPACE_TYPE.HUNYUAN3D;
+    }
+    
+    // Try a direct predict call to test if the client is working
+    try {
+      await log('DEBUG', "Testing client with a simple predict call...");
+      // Try a simple predict call with an empty API name
+      const result = await client.predict("", []);
+      await log('DEBUG', `Predict call result: ${JSON.stringify(result)}`);
+    } catch (predictError) {
+      await log('DEBUG', `Simple predict call error: ${predictError.message}`);
+      // This is expected to fail, but it helps test if the client is working
+    }
+    
+    // Add a timeout to the view_api call
+    await log('DEBUG', "Creating view_api promise...");
+    const apiInfoPromise = client.view_api(true); // true to show all endpoints
+    
+    // Create a timeout promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error("view_api call timed out after 30 seconds"));
+      }, 30000); // 30 second timeout (increased from 20 seconds)
+    });
+    
+    // Race the API info promise against the timeout
+    await log('DEBUG', "Starting view_api call with 30 second timeout...");
+    const apiInfo = await Promise.race([apiInfoPromise, timeoutPromise]);
+    
+    // Log the full API info for debugging
+    await log('DEBUG', `API info retrieved: ${JSON.stringify(apiInfo, null, 2)}`);
+    
+    // Check for InstantMesh-specific endpoints in named_endpoints
+    if (apiInfo && apiInfo.named_endpoints) {
+      const endpoints = Object.keys(apiInfo.named_endpoints);
+      await log('DEBUG', `Available endpoints: ${endpoints.join(', ')}`);
+      
+      // Check for InstantMesh-specific endpoints
+      if (endpoints.includes("/check_input_image") ||
+          endpoints.includes("/make3d") ||
+          endpoints.includes("/generate_mvs") ||
+          endpoints.includes("/preprocess")) {
+        detectedSpaceType = SPACE_TYPE.INSTANTMESH;
+        await log('INFO', `Detected space type: InstantMesh (based on API endpoints)`);
+        return SPACE_TYPE.INSTANTMESH;
+      }
+      
+      // Check for Hunyuan3D-specific endpoints
+      if (endpoints.includes("/shape_generation") ||
+          endpoints.includes("/generation_all")) {
+        detectedSpaceType = SPACE_TYPE.HUNYUAN3D;
+        await log('INFO', `Detected space type: Hunyuan3D-2 (based on API endpoints)`);
+        return SPACE_TYPE.HUNYUAN3D;
+      }
+    }
+    
+    // If we get here, we couldn't determine the space type from named_endpoints
+    // Check unnamed_endpoints as well
+    if (apiInfo && apiInfo.unnamed_endpoints) {
+      const unnamedEndpoints = Object.keys(apiInfo.unnamed_endpoints);
+      await log('DEBUG', `Available unnamed endpoints: ${unnamedEndpoints.join(', ')}`);
+      
+      // Check for InstantMesh-specific endpoints in unnamed_endpoints
+      if (unnamedEndpoints.some(endpoint =>
+          endpoint.includes("check_input_image") ||
+          endpoint.includes("make3d") ||
+          endpoint.includes("generate_mvs") ||
+          endpoint.includes("preprocess"))) {
+        detectedSpaceType = SPACE_TYPE.INSTANTMESH;
+        await log('INFO', `Detected space type: InstantMesh (based on unnamed API endpoints)`);
+        return SPACE_TYPE.INSTANTMESH;
+      }
+      
+      // Check for Hunyuan3D-specific endpoints in unnamed_endpoints
+      if (unnamedEndpoints.some(endpoint =>
+          endpoint.includes("shape_generation") ||
+          endpoint.includes("generation_all"))) {
+        detectedSpaceType = SPACE_TYPE.HUNYUAN3D;
+        await log('INFO', `Detected space type: Hunyuan3D-2 (based on unnamed API endpoints)`);
+        return SPACE_TYPE.HUNYUAN3D;
+      }
+    }
+    
+    // If we still can't determine the space type, check the space name as a hint
+    if (modelSpace.toLowerCase().includes("instantmesh")) {
+      detectedSpaceType = SPACE_TYPE.INSTANTMESH;
+      await log('INFO', `Detected space type: InstantMesh (based on space name)`);
+      return SPACE_TYPE.INSTANTMESH;
+    } else if (modelSpace.toLowerCase().includes("hunyuan")) {
+      detectedSpaceType = SPACE_TYPE.HUNYUAN3D;
+      await log('INFO', `Detected space type: Hunyuan3D-2 (based on space name)`);
+      return SPACE_TYPE.HUNYUAN3D;
+    }
+    
+    // If we get here, we couldn't determine the space type
+    // As a last resort, assume it's InstantMesh (the most common case)
+    await log('WARN', `Could not definitively determine space type. Defaulting to InstantMesh.`);
+    detectedSpaceType = SPACE_TYPE.INSTANTMESH;
+    return SPACE_TYPE.INSTANTMESH;
+  } catch (error) {
+    await log('ERROR', `Error detecting space type: ${error.message}`);
+    // Default to InstantMesh instead of throwing an error
+    await log('WARN', `Defaulting to InstantMesh due to detection error.`);
+    detectedSpaceType = SPACE_TYPE.INSTANTMESH;
+    return SPACE_TYPE.INSTANTMESH;
+  }
+}
 // Authentication options for Gradio using HF token
 const authOptions = { hf_token: hfToken };
 
 // Connect to Hugging Face Spaces and Inference API
-let clientInstantMesh;
+let modelClient;
 let inferenceClient;
 
 // Initialize Hugging Face Inference Client for 2D and 3D asset generation
@@ -300,23 +458,161 @@ if (!hfToken) {
 
 try {
   await log('INFO', "Initializing Hugging Face Inference Client...");
+  await log('DEBUG', `HF_TOKEN length: ${hfToken ? hfToken.length : 0}`);
+  await log('DEBUG', `HF_TOKEN first 4 chars: ${hfToken ? hfToken.substring(0, 4) : 'none'}`);
+  
   inferenceClient = new InferenceClient(hfToken);
   await log('INFO', "Successfully initialized Hugging Face Inference Client");
+  await log('DEBUG', "InferenceClient initialized successfully");
 } catch (error) {
   await log('ERROR', `Error initializing Hugging Face Inference Client: ${error.message}`);
+  await log('DEBUG', `Error stack: ${error.stack}`);
   throw new Error("Failed to initialize Hugging Face Inference Client. Check your HF_TOKEN.");
 }
 
-// Connect to InstantMesh API using Gradio client (this one works correctly)
+// Connect to Model Space API using Gradio client
 try {
-  await log('INFO', "Connecting to InstantMesh API...");
-  await log('INFO', "Using HF token authentication for InstantMesh API");
+  // Validate model space format
+  if (!validateSpaceFormat(modelSpace)) {
+    await log('ERROR', `Invalid model space format: "${modelSpace}". Format must be "username/space-name"`);
+    throw new Error(`Invalid model space format: "${modelSpace}". Format must be "username/space-name" (e.g., "your-username/InstantMesh" or "your-username/Hunyuan3D-2"). Please check your MODEL_SPACE environment variable in the .env file. You need to:
+1. Duplicate either space from:
+   - https://huggingface.co/spaces/mubarak-alketbi/InstantMesh
+   - https://huggingface.co/spaces/mubarak-alketbi/Hunyuan3D-2
+2. Set MODEL_SPACE to your username and space name (e.g., "your-username/InstantMesh")
+3. Make sure your HF_TOKEN has access to this space`);
+  }
   
-  clientInstantMesh = await Client.connect("mubarak-alketbi/InstantMesh", authOptions);
-  await log('INFO', "Successfully connected to InstantMesh API");
+  await log('INFO', `Connecting to model space: ${modelSpace}...`);
+  await log('INFO', "Using HF token authentication");
+  
+  // Check if the space exists before trying to connect to it
+  await log('DEBUG', "Checking if space exists...");
+  let spaceExists = false;
+  let alternativeSpace = null;
+  
+  try {
+    // Try to fetch the space URL to see if it exists
+    const spaceUrl = `https://huggingface.co/spaces/${modelSpace}`;
+    await log('DEBUG', `Checking space URL: ${spaceUrl}`);
+    
+    const response = await fetch(spaceUrl, {
+      method: 'HEAD',
+      headers: { Authorization: `Bearer ${hfToken}` }
+    });
+    
+    spaceExists = response.ok;
+    await log('DEBUG', `Space exists check result: ${spaceExists} (status: ${response.status})`);
+    
+    if (!spaceExists) {
+      // If the space doesn't exist, try alternative casings
+      if (modelSpace.toLowerCase().includes("hunyuan")) {
+        // Try different casings for Hunyuan3D-2
+        const alternatives = [
+          `${modelSpace.split('/')[0]}/Hunyuan3D-2`,
+          `${modelSpace.split('/')[0]}/hunyuan3d-2`,
+          `${modelSpace.split('/')[0]}/HunyuanD-2`
+        ];
+        
+        for (const alt of alternatives) {
+          const altUrl = `https://huggingface.co/spaces/${alt}`;
+          await log('DEBUG', `Checking alternative space URL: ${altUrl}`);
+          
+          const altResponse = await fetch(altUrl, {
+            method: 'HEAD',
+            headers: { Authorization: `Bearer ${hfToken}` }
+          });
+          
+          if (altResponse.ok) {
+            alternativeSpace = alt;
+            await log('INFO', `Found alternative space: ${alternativeSpace}`);
+            break;
+          }
+        }
+      } else if (modelSpace.toLowerCase().includes("instantmesh")) {
+        // Try different casings for InstantMesh
+        const alternatives = [
+          `${modelSpace.split('/')[0]}/InstantMesh`,
+          `${modelSpace.split('/')[0]}/instantmesh`,
+          `${modelSpace.split('/')[0]}/Instantmesh`
+        ];
+        
+        for (const alt of alternatives) {
+          const altUrl = `https://huggingface.co/spaces/${alt}`;
+          await log('DEBUG', `Checking alternative space URL: ${altUrl}`);
+          
+          const altResponse = await fetch(altUrl, {
+            method: 'HEAD',
+            headers: { Authorization: `Bearer ${hfToken}` }
+          });
+          
+          if (altResponse.ok) {
+            alternativeSpace = alt;
+            await log('INFO', `Found alternative space: ${alternativeSpace}`);
+            break;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    await log('WARN', `Error checking if space exists: ${error.message}`);
+    // Continue anyway, as the space might still be accessible
+  }
+  
+  // Use the alternative space if found
+  if (alternativeSpace) {
+    await log('INFO', `Using alternative space: ${alternativeSpace} instead of ${modelSpace}`);
+    modelSpace = alternativeSpace;
+  }
+  
+  // Add a timeout to the connection attempt
+  await log('DEBUG', `Creating connection promise for ${modelSpace} with token length ${hfToken.length}`);
+  const connectionPromise = Client.connect(modelSpace, authOptions);
+  
+  // Create a timeout promise
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`Connection to ${modelSpace} timed out after 60 seconds`));
+    }, 60000); // 60 second timeout (increased from 30 seconds)
+  });
+  
+  try {
+    // Race the connection promise against the timeout
+    await log('DEBUG', "Starting connection attempt with 60 second timeout...");
+    modelClient = await Promise.race([connectionPromise, timeoutPromise]);
+    await log('INFO', `Successfully connected to model space: ${modelSpace}`);
+    
+    // Add more diagnostic logs
+    await log('DEBUG', "Connection successful, checking client object...");
+    await log('DEBUG', `Client object type: ${typeof modelClient}`);
+    await log('DEBUG', `Client object methods: ${Object.getOwnPropertyNames(Object.getPrototypeOf(modelClient)).join(', ')}`);
+    
+    // Detect which space was duplicated
+    const spaceType = await detectSpaceType(modelClient);
+    // We successfully connected to the space, so it's valid
+    // Even if we couldn't determine the exact type, we'll use the detected type
+    await log('INFO', `Using space type: ${spaceType}`);
+    
+  } catch (error) {
+    await log('ERROR', `Error connecting to model space: ${error.message}`);
+    await log('DEBUG', `Error stack: ${error.stack}`);
+    
+    if (error.message.includes("timed out")) {
+      await log('ERROR', `Connection to model space "${modelSpace}" timed out. This could be due to network issues or the space being unavailable.`);
+      throw new Error(`Connection to model space "${modelSpace}" timed out. Please check your internet connection and try again later. If the problem persists, the space might be unavailable or overloaded.`);
+    } else if (error.message.includes("not found") || error.message.includes("404")) {
+      await log('ERROR', `Model space "${modelSpace}" not found. Please make sure you've duplicated either InstantMesh or Hunyuan3D-2 space and set the correct space name in your .env file.`);
+      throw new Error(`Model space "${modelSpace}" not found. This could be because: 1. The space doesn't exist - verify you've duplicated it correctly, 2. You've entered the wrong format - it should be "username/space-name" not the full URL, 3. The space is private and your token doesn't have access to it. Please duplicate either space and set the correct name in your .env file.`);
+    } else if (error.message.includes("unauthorized") || error.message.includes("401")) {
+      await log('ERROR', `Unauthorized access to model space "${modelSpace}". Please check your HF_TOKEN and make sure it has access to this space.`);
+      throw new Error(`Unauthorized access to model space "${modelSpace}". This means your HF_TOKEN doesn't have permission to access this space. Please: 1. Make sure your HF_TOKEN is correct and not expired, 2. Ensure the space is either public or you have granted access to your account, 3. Try generating a new token with appropriate permissions at https://huggingface.co/settings/tokens`);
+    } else {
+      throw error;
+    }
+  }
 } catch (error) {
-  await log('ERROR', `Error connecting to InstantMesh API: ${error.message}`);
-  throw new Error("Failed to connect to InstantMesh API. Check your credentials and network connection.");
+  await log('ERROR', `Error connecting to model space: ${error.message}`);
+  throw new Error(`Failed to connect to model space: ${error.message}`);
 }
 
 // Register tool list handler
@@ -447,9 +743,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             await logOperation(toolName, operationId, 'PROCESSING', { step: 'Validating image' });
             const imageFile = await fs.readFile(imagePath);
             const checkResult = await retryWithBackoff(async () => {
-              return await clientInstantMesh.predict("/check_input_image", [
-                new File([imageFile], path.basename(imagePath), { type: "image/png" })
-              ]);
+              // Use different endpoints based on the detected space type
+              if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
+                return await modelClient.predict("/check_input_image", [
+                  new File([imageFile], path.basename(imagePath), { type: "image/png" })
+                ]);
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
+                // Hunyuan3D doesn't have a check_input_image endpoint, so we'll just return a success
+                await log('INFO', "Using Hunyuan3D space - skipping image validation step");
+                return true;
+              } else {
+                throw new Error("Unknown space type detected. Cannot proceed with 3D asset generation.");
+              }
             }, operationId);
             
             await logOperation(toolName, operationId, 'PROCESSING', { step: 'Image validation complete' });
@@ -458,10 +763,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             await log('DEBUG', "Preprocessing image...");
             await logOperation(toolName, operationId, 'PROCESSING', { step: 'Preprocessing image' });
             const preprocessResult = await retryWithBackoff(async () => {
-              return await clientInstantMesh.predict("/preprocess", [
-                new File([imageFile], path.basename(imagePath), { type: "image/png" }),
-                true // Remove background
-              ]);
+              // Use different endpoints based on the detected space type
+              if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
+                return await modelClient.predict("/preprocess", [
+                  new File([imageFile], path.basename(imagePath), { type: "image/png" }),
+                  true // Remove background
+                ]);
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
+                // Hunyuan3D doesn't have a preprocess endpoint, but we can use its built-in background removal
+                await log('INFO', "Using Hunyuan3D space - using built-in background removal");
+                // Return the original image as we'll handle it in the next step
+                return { data: imageFile };
+              } else {
+                throw new Error("Unknown space type detected. Cannot proceed with 3D asset generation.");
+              }
             }, operationId);
             
             if (!preprocessResult || !preprocessResult.data) {
@@ -491,11 +806,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             await logOperation(toolName, operationId, 'PROCESSING', { step: 'Generating multi-views' });
             const processedImageFile = await fs.readFile(processedImagePath);
             const mvsResult = await retryWithBackoff(async () => {
-              return await clientInstantMesh.predict("/generate_mvs", [
-                new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
-                75, // Sample steps (between 30 and 75)
-                42  // Seed value
-              ]);
+              // Use different endpoints based on the detected space type
+              if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
+                return await modelClient.predict("/generate_mvs", [
+                  new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
+                  75, // Sample steps (between 30 and 75)
+                  42  // Seed value
+                ]);
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
+                // Hunyuan3D uses generation_all instead of generate_mvs
+                await log('INFO', "Using Hunyuan3D space - using generation_all endpoint");
+                return await modelClient.predict("/generation_all", [
+                  prompt,
+                  new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
+                  20, // steps (reduced from 50 to 20 for faster processing with no noticeable quality difference)
+                  5.5, // guidance_scale
+                  1234, // seed
+                  "256", // octree_resolution
+                  true // check_box_rembg (remove background)
+                ]);
+              } else {
+                throw new Error("Unknown space type detected. Cannot proceed with 3D asset generation.");
+              }
             }, operationId);
             
             if (!mvsResult || !mvsResult.data) {
@@ -526,7 +858,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             
             // This step is particularly prone to GPU quota errors, so use retry with backoff
             const modelResult = await retryWithBackoff(async () => {
-              return await clientInstantMesh.predict("/make3d", []);
+              // Use different endpoints based on the detected space type
+              if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
+                return await modelClient.predict("/make3d", []);
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
+                // Hunyuan3D doesn't need a separate make3d step as generation_all already returns the 3D model
+                await log('INFO', "Using Hunyuan3D space - 3D model already generated in previous step");
+                // Return the result from the previous step
+                return mvsResult;
+              } else {
+                throw new Error("Unknown space type detected. Cannot proceed with 3D asset generation.");
+              }
             }, operationId, 5); // Pass operationId and more retries for this critical step
             
             if (!modelResult || !modelResult.data || !modelResult.data.length) {
@@ -762,8 +1104,23 @@ async function saveFileFromData(data, prefix, ext, toolName) {
       
       if (fileData.url) {
         await log('DEBUG', "Found URL in data: " + fileData.url);
-        // Fetch the file from the URL
-        const response = await fetch(fileData.url);
+        // Fetch the file from the URL with authentication
+        const headers = { Authorization: `Bearer ${hfToken}` };
+        await log('DEBUG', "Adding HF token authentication to URL fetch request");
+        
+        // Verify the URL domain matches the expected domain for the configured space
+        try {
+          const urlDomain = new URL(fileData.url).hostname;
+          const expectedDomain = modelSpace.split('/')[0].toLowerCase() + '-' + modelSpace.split('/')[1].toLowerCase() + '.hf.space';
+          
+          if (urlDomain !== expectedDomain) {
+            await log('WARN', `URL domain mismatch: Expected "${expectedDomain}" but got "${urlDomain}". This suggests your MODEL_SPACE setting doesn't match the space that generated this URL.`);
+          }
+        } catch (urlError) {
+          await log('WARN', `Error parsing URL: ${urlError.message}`);
+        }
+        
+        const response = await fetch(fileData.url, { headers });
         if (!response.ok) {
           throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
         }
@@ -778,7 +1135,23 @@ async function saveFileFromData(data, prefix, ext, toolName) {
     } else if (typeof data === 'object' && data.url) {
       // Handle object with URL property
       await log('DEBUG', "Data is an object with URL: " + data.url);
-      const response = await fetch(data.url);
+      // Fetch the file from the URL with authentication
+      const headers = { Authorization: `Bearer ${hfToken}` };
+      await log('DEBUG', "Adding HF token authentication to URL fetch request");
+      
+      // Verify the URL domain matches the expected domain for the configured space
+      try {
+        const urlDomain = new URL(data.url).hostname;
+        const expectedDomain = modelSpace.split('/')[0].toLowerCase() + '-' + modelSpace.split('/')[1].toLowerCase() + '.hf.space';
+        
+        if (urlDomain !== expectedDomain) {
+          await log('WARN', `URL domain mismatch: Expected "${expectedDomain}" but got "${urlDomain}". This suggests your MODEL_SPACE setting doesn't match the space that generated this URL.`);
+        }
+      } catch (urlError) {
+        await log('WARN', `Error parsing URL: ${urlError.message}`);
+      }
+      
+      const response = await fetch(data.url, { headers });
       if (!response.ok) {
         throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
       }
@@ -802,7 +1175,32 @@ async function saveFileFromData(data, prefix, ext, toolName) {
       resourceUri: `asset://${filename}`
     };
   } catch (error) {
-    await log('ERROR', `Error saving file from data: ${error.message}`);
+    // Provide more detailed error messages for common issues
+    if (error.message.includes("404") || error.message.includes("Not Found")) {
+      await log('ERROR', `Error saving file from data: ${error.message}. This may be due to an incorrect model space configuration. Please check your MODEL_SPACE environment variable.`);
+      
+      // Check if the URL contains a domain that doesn't match the configured space
+      if (typeof data === 'object' && (data.url || (Array.isArray(data) && data[0]?.url))) {
+        const url = data.url || (Array.isArray(data) ? data[0].url : null);
+        if (url) {
+          try {
+            const urlDomain = new URL(url).hostname;
+            const expectedDomain = modelSpace.split('/')[0].toLowerCase() + '-' + modelSpace.split('/')[1].toLowerCase() + '.hf.space';
+            
+            if (urlDomain !== expectedDomain) {
+              await log('ERROR', `URL domain mismatch: Expected "${expectedDomain}" but got "${urlDomain}". This suggests your MODEL_SPACE setting doesn't match the space that generated this URL.`);
+              await log('INFO', `To fix this issue, please update your MODEL_SPACE in .env to match the space name in the URL, or duplicate the space correctly and update your configuration.`);
+            }
+          } catch (urlError) {
+            await log('ERROR', `Error parsing URL: ${urlError.message}`);
+          }
+        }
+      }
+    } else if (error.message.includes("401") || error.message.includes("unauthorized")) {
+      await log('ERROR', `Error saving file from data: ${error.message}. This may be due to authentication issues. Please check your HF_TOKEN environment variable.`);
+    } else {
+      await log('ERROR', `Error saving file from data: ${error.message}`);
+    }
     
     // Save debug information for troubleshooting
     try {
@@ -1057,7 +1455,7 @@ async function main() {
       res.status(200).json({
         status: "ok",
         timestamp: new Date().toISOString(),
-        version: "0.1.0", // Updated to version 0.1.0
+        version: "0.2.0", // Updated to version 0.2.0
         uptime: process.uptime()
       });
     });
@@ -1158,7 +1556,7 @@ async function main() {
       return {
         status: "ok",
         timestamp: new Date().toISOString(),
-        version: "0.1.0", // Updated to version 0.1.0
+        version: "0.2.0", // Updated to version 0.2.0
         uptime: process.uptime()
       };
     });

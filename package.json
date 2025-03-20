@@ -1,11 +1,13 @@
 {
   "name": "game-asset-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "node index.js",
+    "space-test": "node space_test.js",
+    "space-test:instantmesh": "node space_test.js instantmesh",
+    "space-test:hunyuan3d": "node space_test.js hunyuan3d"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +17,7 @@
     "@gradio/client": "^1.13.1",
     "@huggingface/inference": "^3.5.2",
     "@modelcontextprotocol/sdk": "^1.7.0",
+    "canvas": "^2.11.2",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "zod": "^3.24.2"

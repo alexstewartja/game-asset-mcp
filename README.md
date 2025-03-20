@@ -32,7 +32,7 @@ This project is an innovative tool that simplifies game asset creation by harnes
 ---
 
 ## Project Overview
-
+The **Game Asset Generator** (version 0.2.0) is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "mubarak-alketbi/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop. This release integrates with MCP using the TypeScript SDK version 1.7.0 and supports both 2D and 3D asset generation with improved Hunyuan3D integration.
 The **Game Asset Generator** (version 0.1.0) is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "mubarak-alketbi/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop. This initial release integrates with MCP using the TypeScript SDK version 1.7.0 and supports both 2D and 3D asset generation.
 
 ---
@@ -229,7 +229,7 @@ The server interacts with these Hugging Face Spaces APIs (abstracted via MCP):
 
 ### Versioning
 The Game Asset Generator follows semantic versioning (SemVer):
-- **Current Version**: 0.1.0 (Initial Release)
+- **Current Version**: 0.2.0 (Hunyuan3D Integration)
 - **MCP SDK Version**: 1.7.0
 - **Version Format**: MAJOR.MINOR.PATCH
   - MAJOR: Breaking changes
