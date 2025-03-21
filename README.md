@@ -9,6 +9,10 @@ This project is an innovative tool that simplifies game asset creation by harnes
   <a href="https://github.com/RooVetGit/Roo-Code">
     <img src="https://img.shields.io/badge/Built_With-Roo_Code-412894?style=for-the-badge" alt="Built With - Roo Code">
   </a>
+  <br>
+  <a href="https://glama.ai/mcp/servers/@MubarakHAlketbi/game-asset-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@MubarakHAlketbi/game-asset-mcp/badge" />
+  </a>
 </p>
 
 ---
