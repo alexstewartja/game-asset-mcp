@@ -23,7 +23,70 @@ import { z } from "zod";
 import https from "https";
 
 // Load environment variables from .env file
-dotenv.config();
+console.error("========== ENVIRONMENT VARIABLE DEBUGGING ==========");
+console.error(`Current working directory: ${process.cwd()}`);
+
+// Check if .env file exists
+try {
+  const envPath = path.join(process.cwd(), '.env');
+  const envExamplePath = path.join(process.cwd(), '.env.example');
+  
+  console.error(`Checking if .env file exists at: ${envPath}`);
+  const envExists = fs.existsSync(envPath);
+  console.error(`.env file exists: ${envExists}`);
+  
+  if (envExists) {
+    console.error(`Reading contents of .env file:`);
+    const envContents = fs.readFileSync(envPath, 'utf8');
+    console.error(`----- .env file contents -----`);
+    console.error(envContents);
+    console.error(`-----------------------------`);
+  }
+  
+  console.error(`Checking if .env.example file exists at: ${envExamplePath}`);
+  const envExampleExists = fs.existsSync(envExamplePath);
+  console.error(`.env.example file exists: ${envExampleExists}`);
+} catch (error) {
+  console.error(`Error checking .env files: ${error.message}`);
+}
+
+// Force load from specific path and override existing environment variables
+console.error(`Loading .env file explicitly from path with override...`);
+const dotenvResult = dotenv.config({
+  path: path.join(process.cwd(), '.env'),
+  override: true // This makes .env variables override system environment variables
+});
+if (dotenvResult.error) {
+  console.error(`Error loading .env file: ${dotenvResult.error.message}`);
+} else {
+  console.error(`.env file loaded successfully from: ${dotenvResult.parsed ? Object.keys(dotenvResult.parsed).length + " variables" : "unknown"}`);
+  if (dotenvResult.parsed) {
+    console.error(`Parsed variables: ${JSON.stringify(dotenvResult.parsed)}`);
+  }
+}
+
+// Force reload the MODEL_SPACE variable from .env to ensure it overrides system variables
+if (dotenvResult.parsed && dotenvResult.parsed.MODEL_SPACE) {
+  console.error(`Forcing MODEL_SPACE to value from .env: "${dotenvResult.parsed.MODEL_SPACE}"`);
+  process.env.MODEL_SPACE = dotenvResult.parsed.MODEL_SPACE;
+}
+
+// Debug log for environment variables
+console.error(`ENV: MODEL_SPACE = "${process.env.MODEL_SPACE}"`);
+console.error(`ENV: HF_TOKEN = "${process.env.HF_TOKEN ? "***" + process.env.HF_TOKEN.substring(process.env.HF_TOKEN.length - 4) : "not set"}"`);
+console.error(`ENV: MODEL_3D_STEPS = "${process.env.MODEL_3D_STEPS || "not set"}"`);
+console.error(`ENV: MODEL_3D_GUIDANCE_SCALE = "${process.env.MODEL_3D_GUIDANCE_SCALE || "not set"}"`);
+console.error(`ENV: MODEL_3D_OCTREE_RESOLUTION = "${process.env.MODEL_3D_OCTREE_RESOLUTION || "not set"}"`);
+console.error(`ENV: MODEL_3D_SEED = "${process.env.MODEL_3D_SEED || "not set"}"`);
+console.error(`ENV: MODEL_3D_REMOVE_BACKGROUND = "${process.env.MODEL_3D_REMOVE_BACKGROUND || "not set"}"`);
+console.error(`ENV: MODEL_3D_TURBO_MODE = "${process.env.MODEL_3D_TURBO_MODE || "not set"}"`);
+
+// Verify MODEL_SPACE is set correctly
+console.error(`VERIFICATION: MODEL_SPACE should be set to the value from .env file`);
+console.error(`VERIFICATION: Expected value from .env: "mubarak-alketbi/Hunyuan3D-2mini-Turbo"`);
+console.error(`VERIFICATION: Actual value in process.env: "${process.env.MODEL_SPACE}"`);
+console.error(`VERIFICATION: Is correct? ${process.env.MODEL_SPACE === "mubarak-alketbi/Hunyuan3D-2mini-Turbo"}`);
+console.error("====================================================");
 
 // Allow working directory to be specified via command-line argument
 const workDir = process.argv[2] || process.cwd();
@@ -284,7 +347,20 @@ const TOOLS = {
 };
 // Get environment variables
 const hfToken = process.env.HF_TOKEN;
-const modelSpace = process.env.MODEL_SPACE || "mubarak-alketbi/InstantMesh";
+
+// Get MODEL_SPACE from environment variable with fallback
+const modelSpaceFromEnv = process.env.MODEL_SPACE;
+const modelSpace = modelSpaceFromEnv || "mubarak-alketbi/InstantMesh";
+
+// Debug log for modelSpace
+console.error("========== MODEL SPACE DEBUGGING ==========");
+console.error(`MODEL_SPACE from environment: "${modelSpaceFromEnv}"`);
+console.error(`MODEL_SPACE after fallback: "${modelSpace}"`);
+console.error(`Is MODEL_SPACE using default fallback? ${!modelSpaceFromEnv}`);
+console.error(`Does MODEL_SPACE include "hunyuan"? ${modelSpace.toLowerCase().includes("hunyuan")}`);
+console.error(`Does MODEL_SPACE include "hunyuan3d-2mini"? ${modelSpace.toLowerCase().includes("hunyuan3d-2mini")}`);
+console.error(`Does MODEL_SPACE include "instantmesh"? ${modelSpace.toLowerCase().includes("instantmesh")}`);
+console.error("===========================================");
 
 // Get 3D model configuration parameters from environment variables with defaults
 const model3dSteps = process.env.MODEL_3D_STEPS ? parseInt(process.env.MODEL_3D_STEPS) : null; // Use space-specific defaults if null
@@ -337,23 +413,42 @@ function validateSpaceFormat(space) {
 async function detectSpaceType(client) {
   try {
     await log('INFO', "Detecting space type using view_api()...");
+    await log('DEBUG', "========== SPACE DETECTION DEBUGGING ==========");
+    await log('DEBUG', `Current modelSpace: "${modelSpace}"`);
+    await log('DEBUG', `modelSpace lowercase: "${modelSpace.toLowerCase()}"`);
+    await log('DEBUG', `Contains "instantmesh": ${modelSpace.toLowerCase().includes("instantmesh")}`);
+    await log('DEBUG', `Contains "hunyuan3d-2mini-turbo": ${modelSpace.toLowerCase().includes("hunyuan3d-2mini-turbo")}`);
+    await log('DEBUG', `Contains "hunyuan3d-2mini": ${modelSpace.toLowerCase().includes("hunyuan3d-2mini")}`);
+    await log('DEBUG', `Contains "hunyuan3dmini": ${modelSpace.toLowerCase().includes("hunyuan3dmini")}`);
+    await log('DEBUG', `Contains "hunyuan": ${modelSpace.toLowerCase().includes("hunyuan")}`);
+    await log('DEBUG', "==============================================");
     
     // First, check if the space name contains a hint about the type
-    if (modelSpace.toLowerCase().includes("instantmesh")) {
-      detectedSpaceType = SPACE_TYPE.INSTANTMESH;
-      await log('INFO', `Detected space type: InstantMesh (based on space name)`);
-      return SPACE_TYPE.INSTANTMESH;
-    } else if (modelSpace.toLowerCase().includes("hunyuan3d-2mini-turbo") ||
-               modelSpace.toLowerCase().includes("hunyuan3d-2mini") ||
-               modelSpace.toLowerCase().includes("hunyuan3dmini")) {
+    // Check for Hunyuan3D-2mini-Turbo first (most specific match)
+    if (modelSpace.toLowerCase().includes("hunyuan3d-2mini-turbo") ||
+        modelSpace.toLowerCase().includes("hunyuan3d-2mini") ||
+        modelSpace.toLowerCase().includes("hunyuan3dmini")) {
       detectedSpaceType = SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
       await log('INFO', `Detected space type: Hunyuan3D-2mini-Turbo (based on space name)`);
+      await log('DEBUG', `Space detection result: HUNYUAN3D_MINI_TURBO (${SPACE_TYPE.HUNYUAN3D_MINI_TURBO})`);
       return SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
-    } else if (modelSpace.toLowerCase().includes("hunyuan")) {
+    }
+    // Then check for regular Hunyuan3D-2
+    else if (modelSpace.toLowerCase().includes("hunyuan")) {
       detectedSpaceType = SPACE_TYPE.HUNYUAN3D;
       await log('INFO', `Detected space type: Hunyuan3D-2 (based on space name)`);
+      await log('DEBUG', `Space detection result: HUNYUAN3D (${SPACE_TYPE.HUNYUAN3D})`);
       return SPACE_TYPE.HUNYUAN3D;
     }
+    // Finally check for InstantMesh
+    else if (modelSpace.toLowerCase().includes("instantmesh")) {
+      detectedSpaceType = SPACE_TYPE.INSTANTMESH;
+      await log('INFO', `Detected space type: InstantMesh (based on space name)`);
+      await log('DEBUG', `Space detection result: INSTANTMESH (${SPACE_TYPE.INSTANTMESH})`);
+      return SPACE_TYPE.INSTANTMESH;
+    }
+    
+    await log('DEBUG', "No space type detected from name, continuing with API endpoint detection...");
     
     // Try a direct predict call to test if the client is working
     try {
@@ -455,20 +550,29 @@ async function detectSpaceType(client) {
     }
     
     // If we still can't determine the space type, check the space name as a hint
-    if (modelSpace.toLowerCase().includes("instantmesh")) {
-      detectedSpaceType = SPACE_TYPE.INSTANTMESH;
-      await log('INFO', `Detected space type: InstantMesh (based on space name)`);
-      return SPACE_TYPE.INSTANTMESH;
-    } else if (modelSpace.toLowerCase().includes("hunyuan3d-2mini-turbo") ||
-               modelSpace.toLowerCase().includes("hunyuan3d-2mini") ||
-               modelSpace.toLowerCase().includes("hunyuan3dmini")) {
+    await log('DEBUG', "Fallback space detection from name...");
+    // Check for Hunyuan3D-2mini-Turbo first (most specific match)
+    if (modelSpace.toLowerCase().includes("hunyuan3d-2mini-turbo") ||
+        modelSpace.toLowerCase().includes("hunyuan3d-2mini") ||
+        modelSpace.toLowerCase().includes("hunyuan3dmini")) {
       detectedSpaceType = SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
-      await log('INFO', `Detected space type: Hunyuan3D-2mini-Turbo (based on space name)`);
+      await log('INFO', `Detected space type: Hunyuan3D-2mini-Turbo (based on space name fallback)`);
+      await log('DEBUG', `Fallback space detection result: HUNYUAN3D_MINI_TURBO (${SPACE_TYPE.HUNYUAN3D_MINI_TURBO})`);
       return SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
-    } else if (modelSpace.toLowerCase().includes("hunyuan")) {
+    }
+    // Then check for regular Hunyuan3D-2
+    else if (modelSpace.toLowerCase().includes("hunyuan")) {
       detectedSpaceType = SPACE_TYPE.HUNYUAN3D;
-      await log('INFO', `Detected space type: Hunyuan3D-2 (based on space name)`);
+      await log('INFO', `Detected space type: Hunyuan3D-2 (based on space name fallback)`);
+      await log('DEBUG', `Fallback space detection result: HUNYUAN3D (${SPACE_TYPE.HUNYUAN3D})`);
       return SPACE_TYPE.HUNYUAN3D;
+    }
+    // Finally check for InstantMesh
+    else if (modelSpace.toLowerCase().includes("instantmesh")) {
+      detectedSpaceType = SPACE_TYPE.INSTANTMESH;
+      await log('INFO', `Detected space type: InstantMesh (based on space name fallback)`);
+      await log('DEBUG', `Fallback space detection result: INSTANTMESH (${SPACE_TYPE.INSTANTMESH})`);
+      return SPACE_TYPE.INSTANTMESH;
     }
     
     // If we get here, we couldn't determine the space type
@@ -527,6 +631,11 @@ try {
   await log('INFO', `Connecting to model space: ${modelSpace}...`);
   await log('INFO', "Using HF token authentication");
   
+  // Additional logging for debugging
+  await log('DEBUG', `MODEL_SPACE environment variable: "${modelSpaceFromEnv}"`);
+  await log('DEBUG', `MODEL_SPACE after default fallback: "${modelSpace}"`);
+  await log('DEBUG', `Is MODEL_SPACE using default? ${!modelSpaceFromEnv}`);
+  
   // Check if the space exists before trying to connect to it
   await log('DEBUG', "Checking if space exists...");
   let spaceExists = false;
@@ -547,7 +656,32 @@ try {
     
     if (!spaceExists) {
       // If the space doesn't exist, try alternative casings
-      if (modelSpace.toLowerCase().includes("hunyuan")) {
+      if (modelSpace.toLowerCase().includes("hunyuan3d-2mini") ||
+          modelSpace.toLowerCase().includes("hunyuan3dmini")) {
+        // Try different casings for Hunyuan3D-2mini-Turbo
+        const alternatives = [
+          `${modelSpace.split('/')[0]}/Hunyuan3D-2mini-Turbo`,
+          `${modelSpace.split('/')[0]}/hunyuan3d-2mini-turbo`,
+          `${modelSpace.split('/')[0]}/Hunyuan3D-2mini`,
+          `${modelSpace.split('/')[0]}/hunyuan3d-2mini`
+        ];
+        
+        for (const alt of alternatives) {
+          const altUrl = `https://huggingface.co/spaces/${alt}`;
+          await log('DEBUG', `Checking alternative space URL: ${altUrl}`);
+          
+          const altResponse = await fetch(altUrl, {
+            method: 'HEAD',
+            headers: { Authorization: `Bearer ${hfToken}` }
+          });
+          
+          if (altResponse.ok) {
+            alternativeSpace = alt;
+            await log('INFO', `Found alternative space: ${alternativeSpace}`);
+            break;
+          }
+        }
+      } else if (modelSpace.toLowerCase().includes("hunyuan")) {
         // Try different casings for Hunyuan3D-2
         const alternatives = [
           `${modelSpace.split('/')[0]}/Hunyuan3D-2`,
@@ -603,7 +737,11 @@ try {
   // Use the alternative space if found
   if (alternativeSpace) {
     await log('INFO', `Using alternative space: ${alternativeSpace} instead of ${modelSpace}`);
+    await log('DEBUG', `Changing MODEL_SPACE from "${modelSpace}" to "${alternativeSpace}"`);
+    // Store the original value for debugging
+    const originalModelSpace = modelSpace;
     modelSpace = alternativeSpace;
+    await log('DEBUG', `MODEL_SPACE changed from "${originalModelSpace}" to "${modelSpace}"`);
   }
   
   // Add a timeout to the connection attempt
@@ -629,10 +767,19 @@ try {
     await log('DEBUG', `Client object methods: ${Object.getOwnPropertyNames(Object.getPrototypeOf(modelClient)).join(', ')}`);
     
     // Detect which space was duplicated
+    await log('DEBUG', `Starting space type detection for "${modelSpace}"...`);
+    // Log the modelSpace value right before detection
+    await log('DEBUG', `About to detect space type for: "${modelSpace}"`);
+    await log('DEBUG', `modelSpace lowercase: "${modelSpace.toLowerCase()}"`);
+    await log('DEBUG', `Contains "hunyuan3d-2mini-turbo": ${modelSpace.toLowerCase().includes("hunyuan3d-2mini-turbo")}`);
+    await log('DEBUG', `Contains "hunyuan": ${modelSpace.toLowerCase().includes("hunyuan")}`);
+    await log('DEBUG', `Contains "instantmesh": ${modelSpace.toLowerCase().includes("instantmesh")}`);
+    
     const spaceType = await detectSpaceType(modelClient);
     // We successfully connected to the space, so it's valid
     // Even if we couldn't determine the exact type, we'll use the detected type
     await log('INFO', `Using space type: ${spaceType}`);
+    await log('DEBUG', `Final detected space type: ${spaceType}`);
     
   } catch (error) {
     await log('ERROR', `Error connecting to model space: ${error.message}`);
