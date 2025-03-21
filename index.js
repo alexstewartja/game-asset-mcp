@@ -205,7 +205,7 @@ const MCP_ERROR_CODES = {
 
 // Initialize MCP server
 const server = new Server(
-  { name: "game-asset-generator", version: "0.2.0" }, // Updated to version 0.2.0
+  { name: "game-asset-generator", version: "0.2.1" }, // Updated to version 0.2.1 with Hunyuan3D-2mini-Turbo support
   {
     capabilities: {
       tools: { list: true, call: true },
@@ -286,10 +286,20 @@ const TOOLS = {
 const hfToken = process.env.HF_TOKEN;
 const modelSpace = process.env.MODEL_SPACE || "mubarak-alketbi/InstantMesh";
 
+// Get 3D model configuration parameters from environment variables with defaults
+const model3dSteps = process.env.MODEL_3D_STEPS ? parseInt(process.env.MODEL_3D_STEPS) : null; // Use space-specific defaults if null
+const model3dGuidanceScale = process.env.MODEL_3D_GUIDANCE_SCALE ? parseFloat(process.env.MODEL_3D_GUIDANCE_SCALE) : null; // Use space-specific defaults if null
+const model3dOctreeResolution = process.env.MODEL_3D_OCTREE_RESOLUTION || null; // Use space-specific defaults if null
+const model3dSeed = process.env.MODEL_3D_SEED ? parseInt(process.env.MODEL_3D_SEED) : null; // Use space-specific defaults if null
+const model3dRemoveBackground = process.env.MODEL_3D_REMOVE_BACKGROUND ?
+  process.env.MODEL_3D_REMOVE_BACKGROUND.toLowerCase() === 'true' : true; // Default to true if not specified
+const model3dTurboMode = process.env.MODEL_3D_TURBO_MODE || "Turbo"; // Default to Turbo mode if not specified
+
 // Space types
 const SPACE_TYPE = {
   INSTANTMESH: "instantmesh",
   HUNYUAN3D: "hunyuan3d",
+  HUNYUAN3D_MINI_TURBO: "hunyuan3d_mini_turbo",
   UNKNOWN: "unknown"
 };
 
@@ -333,6 +343,12 @@ async function detectSpaceType(client) {
       detectedSpaceType = SPACE_TYPE.INSTANTMESH;
       await log('INFO', `Detected space type: InstantMesh (based on space name)`);
       return SPACE_TYPE.INSTANTMESH;
+    } else if (modelSpace.toLowerCase().includes("hunyuan3d-2mini-turbo") ||
+               modelSpace.toLowerCase().includes("hunyuan3d-2mini") ||
+               modelSpace.toLowerCase().includes("hunyuan3dmini")) {
+      detectedSpaceType = SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
+      await log('INFO', `Detected space type: Hunyuan3D-2mini-Turbo (based on space name)`);
+      return SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
     } else if (modelSpace.toLowerCase().includes("hunyuan")) {
       detectedSpaceType = SPACE_TYPE.HUNYUAN3D;
       await log('INFO', `Detected space type: Hunyuan3D-2 (based on space name)`);
@@ -383,6 +399,15 @@ async function detectSpaceType(client) {
         return SPACE_TYPE.INSTANTMESH;
       }
       
+      // Check for Hunyuan3D-2mini-Turbo-specific endpoints
+      if (endpoints.includes("/on_gen_mode_change") ||
+          endpoints.includes("/on_decode_mode_change") ||
+          endpoints.includes("/on_export_click")) {
+        detectedSpaceType = SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
+        await log('INFO', `Detected space type: Hunyuan3D-2mini-Turbo (based on API endpoints)`);
+        return SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
+      }
+      
       // Check for Hunyuan3D-specific endpoints
       if (endpoints.includes("/shape_generation") ||
           endpoints.includes("/generation_all")) {
@@ -409,6 +434,16 @@ async function detectSpaceType(client) {
         return SPACE_TYPE.INSTANTMESH;
       }
       
+      // Check for Hunyuan3D-2mini-Turbo-specific endpoints in unnamed_endpoints
+      if (unnamedEndpoints.some(endpoint =>
+          endpoint.includes("on_gen_mode_change") ||
+          endpoint.includes("on_decode_mode_change") ||
+          endpoint.includes("on_export_click"))) {
+        detectedSpaceType = SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
+        await log('INFO', `Detected space type: Hunyuan3D-2mini-Turbo (based on unnamed API endpoints)`);
+        return SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
+      }
+      
       // Check for Hunyuan3D-specific endpoints in unnamed_endpoints
       if (unnamedEndpoints.some(endpoint =>
           endpoint.includes("shape_generation") ||
@@ -424,6 +459,12 @@ async function detectSpaceType(client) {
       detectedSpaceType = SPACE_TYPE.INSTANTMESH;
       await log('INFO', `Detected space type: InstantMesh (based on space name)`);
       return SPACE_TYPE.INSTANTMESH;
+    } else if (modelSpace.toLowerCase().includes("hunyuan3d-2mini-turbo") ||
+               modelSpace.toLowerCase().includes("hunyuan3d-2mini") ||
+               modelSpace.toLowerCase().includes("hunyuan3dmini")) {
+      detectedSpaceType = SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
+      await log('INFO', `Detected space type: Hunyuan3D-2mini-Turbo (based on space name)`);
+      return SPACE_TYPE.HUNYUAN3D_MINI_TURBO;
     } else if (modelSpace.toLowerCase().includes("hunyuan")) {
       detectedSpaceType = SPACE_TYPE.HUNYUAN3D;
       await log('INFO', `Detected space type: Hunyuan3D-2 (based on space name)`);
@@ -748,9 +789,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 return await modelClient.predict("/check_input_image", [
                   new File([imageFile], path.basename(imagePath), { type: "image/png" })
                 ]);
-              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
-                // Hunyuan3D doesn't have a check_input_image endpoint, so we'll just return a success
-                await log('INFO', "Using Hunyuan3D space - skipping image validation step");
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D || detectedSpaceType === SPACE_TYPE.HUNYUAN3D_MINI_TURBO) {
+                // Hunyuan3D and Hunyuan3D-2mini-Turbo don't have a check_input_image endpoint,
+                // so we'll just return a success
+                await log('INFO', `Using ${detectedSpaceType} space - skipping image validation step`);
                 return true;
               } else {
                 throw new Error("Unknown space type detected. Cannot proceed with 3D asset generation.");
@@ -767,11 +809,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
                 return await modelClient.predict("/preprocess", [
                   new File([imageFile], path.basename(imagePath), { type: "image/png" }),
-                  true // Remove background
+                  model3dRemoveBackground // Use configured value
                 ]);
-              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
-                // Hunyuan3D doesn't have a preprocess endpoint, but we can use its built-in background removal
-                await log('INFO', "Using Hunyuan3D space - using built-in background removal");
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D || detectedSpaceType === SPACE_TYPE.HUNYUAN3D_MINI_TURBO) {
+                // Neither Hunyuan3D nor Hunyuan3D-2mini-Turbo have a preprocess endpoint,
+                // but they have built-in background removal
+                await log('INFO', `Using ${detectedSpaceType} space - using built-in background removal`);
                 // Return the original image as we'll handle it in the next step
                 return { data: imageFile };
               } else {
@@ -808,22 +851,87 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const mvsResult = await retryWithBackoff(async () => {
               // Use different endpoints based on the detected space type
               if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
+                // Use configured values or defaults for InstantMesh
+                const steps = model3dSteps !== null ? model3dSteps : 75; // Default: 75
+                const seed = model3dSeed !== null ? model3dSeed : 42; // Default: 42
+                
+                await log('INFO', `InstantMesh parameters - steps: ${steps}, seed: ${seed}`);
+                
                 return await modelClient.predict("/generate_mvs", [
                   new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
-                  75, // Sample steps (between 30 and 75)
-                  42  // Seed value
+                  steps,
+                  seed
                 ]);
               } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
+                // Use configured values or defaults for Hunyuan3D-2
+                const steps = model3dSteps !== null ? model3dSteps : 20; // Default: 20
+                const guidanceScale = model3dGuidanceScale !== null ? model3dGuidanceScale : 5.5; // Default: 5.5
+                const seed = model3dSeed !== null ? model3dSeed : 1234; // Default: 1234
+                const octreeResolution = model3dOctreeResolution || "256"; // Default: "256"
+                
+                await log('INFO', `Hunyuan3D-2 parameters - steps: ${steps}, guidance_scale: ${guidanceScale}, seed: ${seed}, octree_resolution: ${octreeResolution}, remove_background: ${model3dRemoveBackground}`);
+                
                 // Hunyuan3D uses generation_all instead of generate_mvs
                 await log('INFO', "Using Hunyuan3D space - using generation_all endpoint");
                 return await modelClient.predict("/generation_all", [
                   prompt,
                   new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
-                  20, // steps (reduced from 50 to 20 for faster processing with no noticeable quality difference)
-                  5.5, // guidance_scale
-                  1234, // seed
-                  "256", // octree_resolution
-                  true // check_box_rembg (remove background)
+                  steps,
+                  guidanceScale,
+                  seed,
+                  octreeResolution,
+                  model3dRemoveBackground
+                ]);
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D_MINI_TURBO) {
+                // Use configured values or defaults for Hunyuan3D-2mini-Turbo
+                
+                // If turbo mode is specified, set the appropriate steps value
+                let steps;
+                if (model3dSteps !== null) {
+                  steps = model3dSteps;
+                } else {
+                  // Default steps based on the selected mode
+                  if (model3dTurboMode === "Turbo") {
+                    steps = 5; // Default for Turbo mode
+                  } else if (model3dTurboMode === "Fast") {
+                    steps = 10; // Default for Fast mode
+                  } else { // Standard mode
+                    steps = 20; // Default for Standard mode
+                  }
+                }
+                
+                const guidanceScale = model3dGuidanceScale !== null ? model3dGuidanceScale : 5.0; // Default: 5.0
+                const seed = model3dSeed !== null ? model3dSeed : 1234; // Default: 1234
+                const octreeResolution = model3dOctreeResolution !== null ? parseInt(model3dOctreeResolution) : 256; // Default: 256
+                
+                await log('INFO', `Hunyuan3D-2mini-Turbo parameters - mode: ${model3dTurboMode}, steps: ${steps}, guidance_scale: ${guidanceScale}, seed: ${seed}, octree_resolution: ${octreeResolution}, remove_background: ${model3dRemoveBackground}`);
+                
+                // First, set the generation mode if specified
+                if (model3dTurboMode) {
+                  try {
+                    await modelClient.predict("/on_gen_mode_change", [model3dTurboMode]);
+                    await log('INFO', `Set generation mode to ${model3dTurboMode}`);
+                  } catch (error) {
+                    await log('WARN', `Failed to set generation mode: ${error.message}`);
+                    // Continue with the generation even if setting the mode fails
+                  }
+                }
+                
+                // Use generation_all endpoint
+                await log('INFO', "Using Hunyuan3D-2mini-Turbo space - using generation_all endpoint");
+                
+                // Hunyuan3D-2mini-Turbo has different parameters than Hunyuan3D-2
+                return await modelClient.predict("/generation_all", [
+                  prompt, // caption
+                  new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
+                  null, null, null, null, // Multi-view images (front, back, left, right)
+                  steps,
+                  guidanceScale,
+                  seed,
+                  octreeResolution,
+                  model3dRemoveBackground,
+                  8000, // num_chunks (default)
+                  true // randomize_seed
                 ]);
               } else {
                 throw new Error("Unknown space type detected. Cannot proceed with 3D asset generation.");
@@ -861,9 +969,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               // Use different endpoints based on the detected space type
               if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
                 return await modelClient.predict("/make3d", []);
-              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
-                // Hunyuan3D doesn't need a separate make3d step as generation_all already returns the 3D model
-                await log('INFO', "Using Hunyuan3D space - 3D model already generated in previous step");
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D || detectedSpaceType === SPACE_TYPE.HUNYUAN3D_MINI_TURBO) {
+                // Neither Hunyuan3D nor Hunyuan3D-2mini-Turbo need a separate make3d step
+                // as generation_all already returns the 3D model
+                await log('INFO', `Using ${detectedSpaceType} space - 3D model already generated in previous step`);
                 // Return the result from the previous step
                 return mvsResult;
               } else {
@@ -1455,7 +1564,7 @@ async function main() {
       res.status(200).json({
         status: "ok",
         timestamp: new Date().toISOString(),
-        version: "0.2.0", // Updated to version 0.2.0
+        version: "0.2.1", // Updated to version 0.2.1
         uptime: process.uptime()
       });
     });
@@ -1556,7 +1665,7 @@ async function main() {
       return {
         status: "ok",
         timestamp: new Date().toISOString(),
-        version: "0.2.0", // Updated to version 0.2.0
+        version: "0.2.1", // Updated to version 0.2.1
         uptime: process.uptime()
       };
     });

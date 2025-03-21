@@ -142,7 +142,7 @@ Interact with the server via an MCP client (e.g., Claude Desktop) or programmati
   - **Command**: `generate_3d_asset prompt:"isometric 3D castle"`
   - **Process**:
     - First generates a 2D image from your prompt
-    - Then converts it to 3D using either InstantMesh or Hunyuan3D-2 (based on your MODEL_SPACE setting)
+    - Then converts it to 3D using either InstantMesh, Hunyuan3D-2, or Hunyuan3D-2mini-Turbo (based on your MODEL_SPACE setting)
     - For long-running operations, provides immediate feedback with operation ID and status updates
   - **Output**: Saves multiple files (including the intermediate 2D image, processed image, and final 3D models) and returns their resource URIs.
   - **Enhancement**: The system automatically enhances your prompt and uses optimized parameters for better results.
@@ -168,22 +168,33 @@ Customize the server with these options:
   ```plaintext
   # Required for all API access
   HF_TOKEN=your_hf_token
+# Choose which 3D model space to use (must be duplicated to your account)
+MODEL_SPACE=your-username/InstantMesh
+# OR
+MODEL_SPACE=your-username/Hunyuan3D-2
+# OR
+MODEL_SPACE=your-username/Hunyuan3D-2mini-Turbo
 
-  # Choose which 3D model space to use (must be duplicated to your account)
-  MODEL_SPACE=your-username/InstantMesh
-  # OR
-  MODEL_SPACE=your-username/Hunyuan3D-2
-  
-  # Optional: Port for SSE transport (default: 3000)
+# 3D Model Generation Configuration (optional)
+MODEL_3D_STEPS=20                # Number of inference steps
+MODEL_3D_GUIDANCE_SCALE=5.5      # Controls how closely the model follows the prompt
+MODEL_3D_OCTREE_RESOLUTION=256   # Controls the detail level of the 3D model
+MODEL_3D_SEED=1234               # Controls the randomness of the generation
+MODEL_3D_REMOVE_BACKGROUND=true  # Whether to remove background from input images
+MODEL_3D_TURBO_MODE=Turbo        # For Hunyuan3D-2mini-Turbo: "Turbo", "Fast", or "Standard"
+
+# Optional: Port for SSE transport (default: 3000)
+PORT=3000
   PORT=3000
   ```
   
   The server uses HF token authentication for all Hugging Face services, including:
   - Hugging Face Inference API for 2D and 3D image generation
-  - Your duplicated space (InstantMesh or Hunyuan3D-2) for 3D model conversion
-  
+  - Your duplicated space (InstantMesh, Hunyuan3D-2, or Hunyuan3D-2mini-Turbo) for 3D model conversion
   **IMPORTANT**: You must duplicate one of the following spaces to your Hugging Face account:
   - Option 1: [InstantMesh Space](https://huggingface.co/spaces/tencentARC/InstantMesh)
+  - Option 2: [Hunyuan3D-2 Space](https://huggingface.co/spaces/tencent/Hunyuan3D-2)
+  - Option 3: [Hunyuan3D-2mini-Turbo Space](https://huggingface.co/spaces/tencent/Hunyuan3D-2mini-Turbo)
   - Option 2: [Hunyuan3D-2 Space](https://huggingface.co/spaces/tencent/Hunyuan3D-2)
   
   The application will automatically detect which space you've duplicated based on the available endpoints.
@@ -255,7 +266,7 @@ The server interacts with these Hugging Face services:
 
 - **2D Asset Generation**: Uses the Hugging Face Inference API with model `gokaygokay/Flux-2D-Game-Assets-LoRA` with 50 inference steps
 - **3D Asset Image Generation**: Uses the Hugging Face Inference API with model `gokaygokay/Flux-Game-Assets-LoRA-v2` with 50 inference steps
-- **3D Model Conversion**: Uses one of two options based on your MODEL_SPACE setting:
+- **3D Model Conversion**: Uses one of three options based on your MODEL_SPACE setting:
   - **InstantMesh**: Uses a multi-step process with these endpoints:
     - `/check_input_image`: Validates the input image
     - `/preprocess`: Removes background and prepares the image
@@ -264,10 +275,15 @@ The server interacts with these Hugging Face services:
   - **Hunyuan3D-2**: Uses a streamlined process with:
     - `/generation_all`: Directly generates 3D models from the input image
     - Uses optimized parameters (20 steps, guidance_scale 5.5, seed 1234, octree_resolution "256", and background removal) for faster processing without quality loss
+  - **Hunyuan3D-2mini-Turbo**: Uses an even faster process with:
+    - `/generation_all`: Directly generates 3D models from the input image
+    - Supports multiple generation modes: "Turbo" (5 steps), "Fast" (10 steps), and "Standard" (20 steps)
+    - Provides the fastest 3D model generation with the "Turbo" mode
+    - Allows customization of parameters via environment variables
 
 ### Versioning
 The Game Asset Generator follows semantic versioning (SemVer):
-- **Current Version**: 0.2.0 (Hunyuan3D Integration)
+- **Current Version**: 0.2.1 (Hunyuan3D-2mini-Turbo Integration and Configuration Options)
 - **MCP SDK Version**: 1.7.0
 - **Version Format**: MAJOR.MINOR.PATCH
   - MAJOR: Breaking changes
