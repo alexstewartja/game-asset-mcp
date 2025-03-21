@@ -1,6 +1,6 @@
 # Game Asset Generator using MCP and Hugging Face Spaces
 
-This project is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and "mubarak-alketbi/InstantMesh"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop.
+This project is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates three AI models from Hugging Face Spaces—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and either "tencentARC/InstantMesh" or "tencent/Hunyuan3D-2" (which you'll need to duplicate to your account)—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop.
 
 <p align="center">
   <a href="https://pay.ziina.com/MubarakHAlketbi">
@@ -32,7 +32,7 @@ This project is an innovative tool that simplifies game asset creation by harnes
 ---
 
 ## Project Overview
-The **Game Asset Generator** (version 0.2.0) is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates AI models from Hugging Face—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and either "mubarak-alketbi/InstantMesh" or "mubarak-alketbi/Hunyuan3D-2"—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop. This release integrates with MCP using the TypeScript SDK version 1.7.0 and supports both 2D and 3D asset generation with improved Hunyuan3D integration.
+The **Game Asset Generator** (version 0.2.0) is an innovative tool that simplifies game asset creation by harnessing AI-powered generation. Whether you're a game developer needing quick prototypes or an AI enthusiast exploring generative models, this tool lets you create 2D and 3D game assets from text prompts with ease. It integrates AI models from Hugging Face—powered by "gokaygokay/Flux-2D-Game-Assets-LoRA," "gokaygokay/Flux-Game-Assets-LoRA-v2," and either "tencentARC/InstantMesh" or "tencent/Hunyuan3D-2" (which you'll need to duplicate to your account)—and uses the Model Context Protocol (MCP) for seamless interaction with AI assistants like Claude Desktop. This release integrates with MCP using the TypeScript SDK version 1.7.0 and supports both 2D and 3D asset generation with improved Hunyuan3D integration.
 
 ---
 
@@ -62,8 +62,8 @@ The Game Asset Generator transforms text prompts into game-ready assets through 
    - **3D Assets**:
      - First generates an image using the Hugging Face Inference API with "gokaygokay/Flux-Game-Assets-LoRA-v2" model.
      - Then converts the image to a 3D model using either:
-       - **InstantMesh**: A multi-step process with preprocessing, multi-view generation, and 3D model creation.
-       - **Hunyuan3D-2**: A streamlined process using the /generation_all endpoint for direct 3D model generation.
+       - **InstantMesh**: A multi-step process with preprocessing (/preprocess), multi-view generation (/generate_mvs), and 3D model creation (/make3d).
+       - **Hunyuan3D-2**: A streamlined process using the /generation_all endpoint for direct 3D model generation with optimized parameters (20 steps instead of 50).
 4. **File Output**: Saves the asset (image for 2D, OBJ and GLB files for 3D) locally in the assets directory.
 5. **Response**: Returns the resource URI (e.g., `asset://3d_model/filename.glb`) for immediate use.
 
@@ -94,8 +94,8 @@ User Prompt → MCP Server → AI Model(s) → Local File → Resource URI Respo
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/yourusername/game-asset-generator.git
-   cd game-asset-generator
+   git clone https://github.com/yourusername/game-asset-mcp.git
+   cd game-asset-mcp
    ```
 
 2. **Install Dependencies**:
@@ -179,8 +179,8 @@ Customize the server with these options:
   - Your duplicated space (InstantMesh or Hunyuan3D-2) for 3D model conversion
   
   **IMPORTANT**: You must duplicate one of the following spaces to your Hugging Face account:
-  - Option 1: [InstantMesh Space](https://huggingface.co/spaces/mubarak-alketbi/InstantMesh)
-  - Option 2: [Hunyuan3D-2 Space](https://huggingface.co/spaces/mubarak-alketbi/Hunyuan3D-2)
+  - Option 1: [InstantMesh Space](https://huggingface.co/spaces/tencentARC/InstantMesh)
+  - Option 2: [Hunyuan3D-2 Space](https://huggingface.co/spaces/tencent/Hunyuan3D-2)
   
   The application will automatically detect which space you've duplicated based on the available endpoints.
 
@@ -249,17 +249,17 @@ The Model Context Protocol (MCP) lets this tool act as a server for AI clients. 
 ### API Endpoints and Integration
 The server interacts with these Hugging Face services:
 
-- **2D Asset Generation**: Uses the Hugging Face Inference API with model `gokaygokay/Flux-2D-Game-Assets-LoRA`
-- **3D Asset Image Generation**: Uses the Hugging Face Inference API with model `gokaygokay/Flux-Game-Assets-LoRA-v2`
+- **2D Asset Generation**: Uses the Hugging Face Inference API with model `gokaygokay/Flux-2D-Game-Assets-LoRA` with 50 inference steps
+- **3D Asset Image Generation**: Uses the Hugging Face Inference API with model `gokaygokay/Flux-Game-Assets-LoRA-v2` with 50 inference steps
 - **3D Model Conversion**: Uses one of two options based on your MODEL_SPACE setting:
   - **InstantMesh**: Uses a multi-step process with these endpoints:
     - `/check_input_image`: Validates the input image
     - `/preprocess`: Removes background and prepares the image
-    - `/generate_mvs`: Creates multi-view images
+    - `/generate_mvs`: Creates multi-view images with 75 sample steps and seed value 42
     - `/make3d`: Generates the final 3D models (OBJ and GLB)
   - **Hunyuan3D-2**: Uses a streamlined process with:
     - `/generation_all`: Directly generates 3D models from the input image
-    - Uses optimized parameters (20 steps instead of 50) for faster processing without quality loss
+    - Uses optimized parameters (20 steps, guidance_scale 5.5, seed 1234, octree_resolution "256", and background removal) for faster processing without quality loss
 
 ### Versioning
 The Game Asset Generator follows semantic versioning (SemVer):
