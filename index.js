@@ -362,14 +362,72 @@ console.error(`Does MODEL_SPACE include "hunyuan3d-2mini"? ${modelSpace.toLowerC
 console.error(`Does MODEL_SPACE include "instantmesh"? ${modelSpace.toLowerCase().includes("instantmesh")}`);
 console.error("===========================================");
 
-// Get 3D model configuration parameters from environment variables with defaults
-const model3dSteps = process.env.MODEL_3D_STEPS ? parseInt(process.env.MODEL_3D_STEPS) : null; // Use space-specific defaults if null
-const model3dGuidanceScale = process.env.MODEL_3D_GUIDANCE_SCALE ? parseFloat(process.env.MODEL_3D_GUIDANCE_SCALE) : null; // Use space-specific defaults if null
-const model3dOctreeResolution = process.env.MODEL_3D_OCTREE_RESOLUTION || null; // Use space-specific defaults if null
-const model3dSeed = process.env.MODEL_3D_SEED ? parseInt(process.env.MODEL_3D_SEED) : null; // Use space-specific defaults if null
+// Get and validate 3D model configuration parameters from environment variables with defaults
+// Function to validate numeric value within a range
+function validateNumericRange(value, min, max, defaultValue, paramName) {
+  if (value === null || value === undefined) {
+    return defaultValue;
+  }
+  
+  const numValue = Number(value);
+  if (isNaN(numValue)) {
+    console.error(`Invalid ${paramName} value: "${value}" is not a number. Using default: ${defaultValue}`);
+    return defaultValue;
+  }
+  
+  if (numValue < min) {
+    console.error(`${paramName} value ${numValue} is below minimum (${min}). Using minimum value.`);
+    return min;
+  }
+  
+  if (numValue > max) {
+    console.error(`${paramName} value ${numValue} exceeds maximum (${max}). Using maximum value.`);
+    return max;
+  }
+  
+  return numValue;
+}
+
+// Function to validate enum values
+function validateEnum(value, allowedValues, defaultValue, paramName) {
+  if (value === null || value === undefined) {
+    return defaultValue;
+  }
+  
+  if (!allowedValues.includes(value)) {
+    console.error(`Invalid ${paramName} value: "${value}". Allowed values: [${allowedValues.join(', ')}]. Using default: ${defaultValue}`);
+    return defaultValue;
+  }
+  
+  return value;
+}
+
+// Parse and validate steps (will be validated per model type later)
+const model3dSteps = process.env.MODEL_3D_STEPS ? parseInt(process.env.MODEL_3D_STEPS) : null;
+
+// Parse and validate guidance scale (0.0-100.0)
+const model3dGuidanceScale = process.env.MODEL_3D_GUIDANCE_SCALE ?
+  validateNumericRange(parseFloat(process.env.MODEL_3D_GUIDANCE_SCALE), 0.0, 100.0, null, "MODEL_3D_GUIDANCE_SCALE") : null;
+
+// Parse octree resolution (will be validated per model type later)
+const model3dOctreeResolution = process.env.MODEL_3D_OCTREE_RESOLUTION || null;
+
+// Parse and validate seed (0-10000000)
+const model3dSeed = process.env.MODEL_3D_SEED ?
+  validateNumericRange(parseInt(process.env.MODEL_3D_SEED), 0, 10000000, null, "MODEL_3D_SEED") : null;
+
+// Parse and validate remove background (boolean)
 const model3dRemoveBackground = process.env.MODEL_3D_REMOVE_BACKGROUND ?
   process.env.MODEL_3D_REMOVE_BACKGROUND.toLowerCase() === 'true' : true; // Default to true if not specified
-const model3dTurboMode = process.env.MODEL_3D_TURBO_MODE || "Turbo"; // Default to Turbo mode if not specified
+
+// Parse and validate turbo mode (enum: "Turbo", "Fast", "Standard")
+const validTurboModes = ["Turbo", "Fast", "Standard"];
+const model3dTurboMode = validateEnum(
+  process.env.MODEL_3D_TURBO_MODE,
+  validTurboModes,
+  "Turbo",
+  "MODEL_3D_TURBO_MODE"
+);
 
 // Space types
 const SPACE_TYPE = {
@@ -998,8 +1056,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const mvsResult = await retryWithBackoff(async () => {
               // Use different endpoints based on the detected space type
               if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
-                // Use configured values or defaults for InstantMesh
-                const steps = model3dSteps !== null ? model3dSteps : 75; // Default: 75
+                // Use configured values or defaults for InstantMesh with validation
+                // InstantMesh steps range: 30-75
+                let steps = model3dSteps !== null ? model3dSteps : 75; // Default: 75
+                steps = validateNumericRange(steps, 30, 75, 75, "InstantMesh steps");
+                
+                // Any integer is valid for seed, but use default if not provided
                 const seed = model3dSeed !== null ? model3dSeed : 42; // Default: 42
                 
                 await log('INFO', `InstantMesh parameters - steps: ${steps}, seed: ${seed}`);
@@ -1010,11 +1072,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   seed
                 ]);
               } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
-                // Use configured values or defaults for Hunyuan3D-2
-                const steps = model3dSteps !== null ? model3dSteps : 20; // Default: 20
+                // Use configured values or defaults for Hunyuan3D-2 with validation
+                // Hunyuan3D-2 steps range: 20-50
+                let steps = model3dSteps !== null ? model3dSteps : 20; // Default: 20
+                steps = validateNumericRange(steps, 20, 50, 20, "Hunyuan3D-2 steps");
+                
+                // Guidance scale already validated (0.0-100.0)
                 const guidanceScale = model3dGuidanceScale !== null ? model3dGuidanceScale : 5.5; // Default: 5.5
+                
+                // Seed already validated (0-10000000)
                 const seed = model3dSeed !== null ? model3dSeed : 1234; // Default: 1234
-                const octreeResolution = model3dOctreeResolution || "256"; // Default: "256"
+                
+                // Validate octree resolution (valid options: "256", "384", "512")
+                const validOctreeResolutions = ["256", "384", "512"];
+                const octreeResolution = validateEnum(
+                  model3dOctreeResolution,
+                  validOctreeResolutions,
+                  "256",
+                  "Hunyuan3D-2 octree_resolution"
+                );
                 
                 await log('INFO', `Hunyuan3D-2 parameters - steps: ${steps}, guidance_scale: ${guidanceScale}, seed: ${seed}, octree_resolution: ${octreeResolution}, remove_background: ${model3dRemoveBackground}`);
                 
@@ -1030,28 +1106,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   model3dRemoveBackground
                 ]);
               } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D_MINI_TURBO) {
-                // Use configured values or defaults for Hunyuan3D-2mini-Turbo
+                // Use configured values or defaults for Hunyuan3D-2mini-Turbo with validation
                 
-                // If turbo mode is specified, set the appropriate steps value
-                let steps;
-                if (model3dSteps !== null) {
-                  steps = model3dSteps;
-                } else {
-                  // Default steps based on the selected mode
-                  if (model3dTurboMode === "Turbo") {
-                    steps = 5; // Default for Turbo mode
-                  } else if (model3dTurboMode === "Fast") {
-                    steps = 10; // Default for Fast mode
-                  } else { // Standard mode
-                    steps = 20; // Default for Standard mode
-                  }
+                // Determine default steps based on the selected mode
+                let defaultSteps;
+                if (model3dTurboMode === "Turbo") {
+                  defaultSteps = 5; // Default for Turbo mode
+                } else if (model3dTurboMode === "Fast") {
+                  defaultSteps = 10; // Default for Fast mode
+                } else { // Standard mode
+                  defaultSteps = 20; // Default for Standard mode
                 }
                 
-                const guidanceScale = model3dGuidanceScale !== null ? model3dGuidanceScale : 5.0; // Default: 5.0
-                const seed = model3dSeed !== null ? model3dSeed : 1234; // Default: 1234
-                const octreeResolution = model3dOctreeResolution !== null ? parseInt(model3dOctreeResolution) : 256; // Default: 256
+                // Hunyuan3D-2mini-Turbo steps range: 1-100
+                let steps = model3dSteps !== null ? model3dSteps : defaultSteps;
+                steps = validateNumericRange(steps, 1, 100, defaultSteps, "Hunyuan3D-2mini-Turbo steps");
                 
-                await log('INFO', `Hunyuan3D-2mini-Turbo parameters - mode: ${model3dTurboMode}, steps: ${steps}, guidance_scale: ${guidanceScale}, seed: ${seed}, octree_resolution: ${octreeResolution}, remove_background: ${model3dRemoveBackground}`);
+                // Guidance scale already validated (0.0-100.0)
+                const guidanceScale = model3dGuidanceScale !== null ? model3dGuidanceScale : 5.0; // Default: 5.0
+                
+                // Seed already validated (0-10000000)
+                const seed = model3dSeed !== null ? model3dSeed : 1234; // Default: 1234
+                
+                // Validate octree resolution (range: 16-512)
+                let octreeResolution = model3dOctreeResolution !== null ? parseInt(model3dOctreeResolution) : 256; // Default: 256
+                octreeResolution = validateNumericRange(octreeResolution, 16, 512, 256, "Hunyuan3D-2mini-Turbo octree_resolution");
+                
+                // Validate num_chunks (range: 1000-5000000)
+                const numChunks = validateNumericRange(8000, 1000, 5000000, 8000, "Hunyuan3D-2mini-Turbo num_chunks");
+                
+                await log('INFO', `Hunyuan3D-2mini-Turbo parameters - mode: ${model3dTurboMode}, steps: ${steps}, guidance_scale: ${guidanceScale}, seed: ${seed}, octree_resolution: ${octreeResolution}, remove_background: ${model3dRemoveBackground}, num_chunks: ${numChunks}`);
                 
                 // First, set the generation mode if specified
                 if (model3dTurboMode) {
@@ -1077,7 +1161,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   seed,
                   octreeResolution,
                   model3dRemoveBackground,
-                  8000, // num_chunks (default)
+                  numChunks, // num_chunks with validation
                   true // randomize_seed
                 ]);
               } else {
