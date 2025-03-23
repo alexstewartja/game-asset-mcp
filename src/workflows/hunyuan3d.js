@@ -3,11 +3,18 @@ import path from "path";
 import { log } from "../logger.js";
 import { saveFileFromData } from "../utils.js";
 import sharp from "sharp";
+
+function validateAssetsDir(assetsDir) {
+  if (!assetsDir || typeof assetsDir !== "string") {
+    throw new Error("assetsDir must be a defined string");
+  }
+}
 import crypto from "crypto";
 
 export async function processHunyuan3d({
   modelClient,
   imageFile,
+  assetsDir,
   imagePath,
   prompt,
   operationId,
@@ -20,10 +27,14 @@ export async function processHunyuan3d({
   retryWithBackoff,
   notifyResourceListChanged
 }) {
-  // Validate required parameters
-  if (!assetsDir || typeof assetsDir !== "string") {
-    throw new Error("assetsDir must be a defined string");
-  }
+  // Validate assetsDir before proceeding
+  validateAssetsDir(assetsDir);
+  
+  // Debug logging
+  await log('DEBUG', `Assets directory: ${assetsDir}`, workDir);
+  await log('DEBUG', `Image path: ${imagePath}`, workDir);
+  await log('DEBUG', `Tool name: ${toolName}`, workDir);
+
   const { model3dSteps, model3dGuidanceScale, model3dSeed, model3dOctreeResolution, model3dRemoveBackground } = config;
 
   await log('INFO', "Processing with Hunyuan3D-2 space", workDir);
