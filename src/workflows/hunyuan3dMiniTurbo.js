@@ -20,6 +20,10 @@ export async function processHunyuan3dMiniTurbo({
   retryWithBackoff,
   notifyResourceListChanged
 }) {
+  // Validate required parameters
+  if (!assetsDir || typeof assetsDir !== "string") {
+    throw new Error("assetsDir must be a defined string");
+  }
   const { model3dSteps, model3dGuidanceScale, model3dSeed, model3dOctreeResolution, model3dRemoveBackground, model3dTurboMode } = config;
 
   await log('INFO', "Processing with Hunyuan3D-2mini-Turbo space", workDir);
@@ -28,6 +32,10 @@ export async function processHunyuan3dMiniTurbo({
   const pngBuffer = await sharp(imageFile).png().toBuffer();
   const mimeType = 'image/png';
   const imageFilename = `input_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.png`;
+  // Validate path construction
+  if (!toolName) {
+    throw new Error("toolName must be defined");
+  }
   const pngImagePath = path.join(assetsDir, `3d_processed_${toolName}_${Date.now()}.png`);
   await fs.writeFile(pngImagePath, pngBuffer);
   await log('INFO', `Converted image saved at: ${pngImagePath}`, workDir);
@@ -84,6 +92,8 @@ export async function processHunyuan3dMiniTurbo({
   const buffer = await response.arrayBuffer();
 
   // Save as both OBJ and GLB (Hunyuan3D-2mini-Turbo outputs GLB, aliased for consistency)
+  // Log the parameters being passed to saveFileFromData for debugging
+  await log('DEBUG', `Saving GLB with parameters: toolName=${toolName}, assetsDir=${assetsDir}`, workDir);
   const glbResult = await saveFileFromData(buffer, "3d_model", "glb", toolName, assetsDir, hfToken, modelSpace, workDir);
   await log('INFO', `GLB model saved at: ${glbResult.filePath}`, workDir);
   await notifyResourceListChanged();

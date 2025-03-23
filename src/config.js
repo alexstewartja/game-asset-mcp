@@ -83,6 +83,14 @@ export async function loadConfig() {
   const assetsDir = path.join(workDir, "assets");
   await fs.mkdir(assetsDir, { recursive: true });
   
+  // Validate assetsDir
+  if (!assetsDir || typeof assetsDir !== "string") {
+    console.error("ERROR: assetsDir is undefined or not a string in config.js");
+    throw new Error("Failed to create assets directory");
+  }
+  
+  console.error(`Assets directory: ${assetsDir}`);
+  
   // Get environment variables
   const hfToken = process.env.HF_TOKEN;
   

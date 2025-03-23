@@ -135,8 +135,30 @@ export async function saveFileFromUrl(url, prefix, ext, toolName, assetsDir, hfT
 }
 
 export async function saveFileFromData(data, prefix, ext, toolName, assetsDir, hfToken = null, modelSpace = null, workDir = null) {
+  // Validate required parameters
   if (!data) {
     throw new Error("No data provided to save");
+  }
+  
+  if (!prefix || typeof prefix !== "string") {
+    throw new Error("prefix must be a defined string");
+  }
+  
+  if (!ext || typeof ext !== "string") {
+    throw new Error("ext must be a defined string");
+  }
+  
+  if (!toolName || typeof toolName !== "string") {
+    throw new Error("toolName must be a defined string");
+  }
+  
+  if (!assetsDir || typeof assetsDir !== "string") {
+    throw new Error("assetsDir must be a defined string");
+  }
+
+  // Log parameters for debugging if workDir is available
+  if (workDir) {
+    await log('DEBUG', `saveFileFromData called with: prefix=${prefix}, ext=${ext}, toolName=${toolName}, assetsDir=${assetsDir}`, workDir);
   }
 
   const filename = generateUniqueFilename(prefix, ext, toolName);

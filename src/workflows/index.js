@@ -23,6 +23,18 @@ export async function process3dAsset({
   retryWithBackoff,
   notifyResourceListChanged
 }) {
+  // Validate critical parameters
+  if (!assetsDir || typeof assetsDir !== "string") {
+    throw new Error("assetsDir must be a defined string in process3dAsset");
+  }
+  
+  if (!toolName || typeof toolName !== "string") {
+    throw new Error("toolName must be a defined string in process3dAsset");
+  }
+  
+  if (!spaceType) {
+    throw new Error("spaceType must be defined in process3dAsset");
+  }
   const params = {
     modelClient,
     imageFile,

@@ -173,6 +173,18 @@ export function registerToolHandlers(server, config, clients, notifyResourceList
               // Read the image file for processing
               const imageFile = await fs.readFile(imagePath);
               
+              // Log critical parameters before processing
+              await log('DEBUG', `Critical parameters check before processing:`, workDir);
+              await log('DEBUG', `- assetsDir: ${assetsDir ? assetsDir : 'undefined'}`, workDir);
+              await log('DEBUG', `- toolName: ${name ? name : 'undefined'}`, workDir);
+              await log('DEBUG', `- spaceType: ${spaceType ? spaceType : 'undefined'}`, workDir);
+              await log('DEBUG', `- workDir: ${workDir ? workDir : 'undefined'}`, workDir);
+              
+              // Validate assetsDir before proceeding
+              if (!assetsDir || typeof assetsDir !== "string") {
+                throw new Error("assetsDir is undefined or not a string in tools.js");
+              }
+              
               // Process the 3D asset based on the space type
               await logOperation(name, operationId, 'PROCESSING', { step: 'Processing with workflow', spaceType }, workDir);
               
