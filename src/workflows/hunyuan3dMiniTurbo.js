@@ -3,6 +3,12 @@ import path from "path";
 import { log } from "../logger.js";
 import { saveFileFromData } from "../utils.js";
 import sharp from "sharp";
+
+function validateAssetsDir(assetsDir) {
+  if (!assetsDir || typeof assetsDir !== "string") {
+    throw new Error("assetsDir must be a defined string");
+  }
+}
 import crypto from "crypto";
 
 export async function processHunyuan3dMiniTurbo({
@@ -20,6 +26,14 @@ export async function processHunyuan3dMiniTurbo({
   retryWithBackoff,
   notifyResourceListChanged
 }) {
+  // Validate assetsDir before proceeding
+  validateAssetsDir(assetsDir);
+  
+  // Debug logging
+  await log('DEBUG', `Assets directory: ${assetsDir}`, workDir);
+  await log('DEBUG', `Image path: ${imagePath}`, workDir);
+  await log('DEBUG', `Tool name: ${toolName}`, workDir);
+
   const { model3dSteps, model3dGuidanceScale, model3dSeed, model3dOctreeResolution, model3dRemoveBackground, model3dTurboMode } = config;
 
   await log('INFO', "Processing with Hunyuan3D-2mini-Turbo space", workDir);
