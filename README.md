@@ -283,7 +283,7 @@ The server interacts with these Hugging Face services:
 
 ### Versioning
 The Game Asset Generator follows semantic versioning (SemVer):
-- **Current Version**: 0.2.1 (Hunyuan3D-2mini-Turbo Integration and Configuration Options)
+- **Current Version**: 0.3.0 (Hunyuan3D-2mini-Turbo Integration and Configuration Options)
 - **MCP SDK Version**: 1.7.0
 - **Version Format**: MAJOR.MINOR.PATCH
   - MAJOR: Breaking changes
