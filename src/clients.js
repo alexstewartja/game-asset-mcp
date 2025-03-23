@@ -4,7 +4,7 @@ import { log } from "./logger.js";
 import { validateSpaceFormat, detectSpaceType } from "./spaceTypes.js";
 
 export async function initializeClients(config) {
-  const { hfToken, modelSpace: initialModelSpace, workDir } = config;
+  const { hfToken, modelSpace: initialModelSpace, workDir, modelSpaceType } = config;
   let modelSpace = initialModelSpace;
 
   if (!hfToken) {
@@ -175,12 +175,12 @@ export async function initializeClients(config) {
         await log('DEBUG', `Contains "hunyuan3d-2mini-turbo": ${modelSpace.toLowerCase().includes("hunyuan3d-2mini-turbo")}`, workDir);
         await log('DEBUG', `Contains "hunyuan": ${modelSpace.toLowerCase().includes("hunyuan")}`, workDir);
         await log('DEBUG', `Contains "instantmesh": ${modelSpace.toLowerCase().includes("instantmesh")}`, workDir);
-        
-        const spaceType = await detectSpaceType(modelClient, modelSpace, workDir);
+        const spaceType = modelSpaceType || await detectSpaceType(modelClient, modelSpace, workDir);
         // We successfully connected to the space, so it's valid
-        // Even if we couldn't determine the exact type, we'll use the detected type
-        await log('INFO', `Using space type: ${spaceType}`, workDir);
-        await log('DEBUG', `Final detected space type: ${spaceType}`, workDir);
+        // Even if we couldn't determine the exact type, we'll use the detected type or manual override
+        await log('INFO', `Using space type: ${spaceType}${modelSpaceType ? ' (manually specified)' : ''}`, workDir);
+        await log('DEBUG', `Final space type: ${spaceType}`, workDir);
+        
         
         return {
           inferenceClient,

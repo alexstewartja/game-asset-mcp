@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { promises as fs } from "fs";
 import { validateNumericRange, validateEnum } from "./validation.js";
+import { SPACE_TYPE } from "./spaceTypes.js";
 
 export async function loadConfig() {
   // Allow working directory to be specified via command-line argument
@@ -66,6 +67,7 @@ export async function loadConfig() {
   console.error(`ENV: MODEL_3D_SEED = "${process.env.MODEL_3D_SEED || "not set"}"`);
   console.error(`ENV: MODEL_3D_REMOVE_BACKGROUND = "${process.env.MODEL_3D_REMOVE_BACKGROUND || "not set"}"`);
   console.error(`ENV: MODEL_3D_TURBO_MODE = "${process.env.MODEL_3D_TURBO_MODE || "not set"}"`);
+  console.error(`ENV: MODEL_SPACE_TYPE = "${process.env.MODEL_SPACE_TYPE || "not set"}"`);
   
   // Verify MODEL_SPACE is set correctly
   console.error(`VERIFICATION: MODEL_SPACE should be set to the value from .env file`);
@@ -127,6 +129,15 @@ export async function loadConfig() {
   
   // Port for server
   const port = process.env.PORT || 3000;
+  
+  // Validate model space type (enum: "instantmesh", "hunyuan3d", "hunyuan3d_mini_turbo")
+  const validSpaceTypes = Object.values(SPACE_TYPE);
+  const modelSpaceType = validateEnum(
+    process.env.MODEL_SPACE_TYPE,
+    validSpaceTypes,
+    null,
+    "MODEL_SPACE_TYPE"
+  );
 
   return {
     workDir,
@@ -142,5 +153,6 @@ export async function loadConfig() {
     model3dTurboMode,
     validTurboModes,
     port,
+    modelSpaceType
   };
 }
