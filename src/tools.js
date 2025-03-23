@@ -1,6 +1,6 @@
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { log, logOperation } from "./logger.js";
+import { log, logOperation, logDetailedError } from "./logger.js";
 import { retryWithBackoff, sanitizePrompt, saveFileFromData, detectImageFormat } from "./utils.js";
 import { MCP_ERROR_CODES } from "./validation.js";
 import { SPACE_TYPE } from "./spaceTypes.js";
@@ -227,17 +227,26 @@ export function registerToolHandlers(server, config, clients, notifyResourceList
             } catch (error) {
               const errorMessage = `Error in 3D asset generation (Operation ID: ${operationId}):\n${error.message}\n\nThe operation has been terminated. Please try again later or with a different prompt.`;
               
-              await log('ERROR', `Error in background processing for operation ${operationId}: ${error.message}`, workDir);
-              await logOperation(name, operationId, 'ERROR', {
-                error: error.message,
-                stack: error.stack,
+              // Use the enhanced error logging function
+              await logDetailedError(error, operationId, workDir, {
+                prompt,
+                enhancedPrompt: `${prompt}, high detailed, complete object, not cut off, white solid background`,
+                spaceType,
+                modelSpace,
                 phase: global.operationUpdates[operationId] ?
                        global.operationUpdates[operationId][global.operationUpdates[operationId].length - 1].status :
-                       'UNKNOWN'
-              }, workDir);
+                       'UNKNOWN',
+                parameters: {
+                  steps: model3dSteps,
+                  guidanceScale: model3dGuidanceScale,
+                  seed: model3dSeed,
+                  octreeResolution: model3dOctreeResolution,
+                  removeBackground: model3dRemoveBackground,
+                  turboMode: model3dTurboMode
+                }
+              });
               
-              // Log the error
-              await log('ERROR', `Operation ${operationId} failed: ${error.message}`, workDir);
+              // Log the error message for the client
               await log('INFO', `Error message for client:\n${errorMessage}`, workDir);
             }
           })();

@@ -27,7 +27,7 @@ export async function process3dAsset({
     modelClient,
     imageFile,
     imagePath,
-    processedImagePath,
+    // processedImagePath removed as it's set internally in the workflows
     prompt,
     operationId,
     toolName,
