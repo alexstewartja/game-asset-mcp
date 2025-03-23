@@ -108,65 +108,55 @@ export function registerToolHandlers(server, config, clients, notifyResourceList
       if (name === TOOLS.GENERATE_3D_ASSET.name) {
         const operationId = `3D-${++operationCounter}`;
         await logOperation(name, operationId, 'STARTED', {}, workDir);
-        
+
         try {
           const { prompt } = schema3D.parse(args);
           if (!prompt) {
             throw new Error("Invalid or empty prompt");
           }
           await log('INFO', `Generating 3D asset with prompt: "${prompt}"`, workDir);
-          await logOperation(name, operationId, 'PROCESSING', { step: 'Parsing prompt', prompt }, workDir);
-          
-          // Initial response to prevent timeout with more detailed information
+
           const initialResponse = {
             content: [
               {
                 type: "text",
                 text: `Starting 3D asset generation (Operation ID: ${operationId})...\n\n` +
-                      `This process involves several steps:\n` +
-                      `1. Generating initial 3D image from prompt\n` +
-                      `2. Validating image for 3D conversion\n` +
-                      `3. Preprocessing image (removing background)\n` +
-                      `4. Generating multi-view images\n` +
-                      `5. Creating 3D models (OBJ and GLB)\n\n` +
-                      `This may take several minutes. The process will continue in the background.\n` +
-                      `You'll see status updates here for any significant events (like GPU quota limits).\n` +
-                      `The final 3D models will be available when the process completes.`
+                      `This process may take several minutes. Check logs for progress.`
               }
             ],
             isError: false,
-            metadata: {
-              operationId: operationId,
-              status: "STARTED",
-              startTime: new Date().toISOString(),
-              prompt: prompt
-            }
+            metadata: { operationId }
           };
-          
-          // Start the 3D asset generation process in the background
+
           (async () => {
             try {
-              // Step 1: Generate the initial image using the Inference API
-              await logOperation(name, operationId, 'PROCESSING', { step: 'Generating initial image' }, workDir);
-              await log('DEBUG', "Calling Hugging Face Inference API for 3D asset generation...", workDir);
-              
-              // Use retry mechanism for the image generation
-              // Enhance the prompt to specify high detail, complete object, and white background
               const enhancedPrompt = `${prompt}, high detailed, complete object, not cut off, white solid background`;
               await log('DEBUG', `Enhanced 3D prompt: "${enhancedPrompt}"`, workDir);
-              
-              const image = await retryWithBackoff(async () => {
-                return await inferenceClient.textToImage({
-                  model: "gokaygokay/Flux-Game-Assets-LoRA-v2",
-                  inputs: enhancedPrompt,
-                  parameters: { num_inference_steps: 50 },
-                  provider: "hf-inference",
-                });
-              }, operationId);
-              
-              if (!image) {
-                throw new Error("No image returned from 3D image generation API");
+
+              // Use fetch instead of InferenceClient
+              await log('DEBUG', "Using fetch to call Hugging Face Inference API for 3D asset generation...", workDir);
+              const response = await fetch(
+                "https://router.huggingface.co/hf-inference/models/gokaygokay/Flux-Game-Assets-LoRA-v2",
+                {
+                  headers: {
+                    Authorization: `Bearer ${hfToken}`,
+                    "Content-Type": "application/json",
+                  },
+                  method: "POST",
+                  body: JSON.stringify({
+                    inputs: enhancedPrompt,
+                    parameters: { num_inference_steps: 50 }
+                  }),
+                }
+              );
+
+              if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP error! Status: ${response.status}, Message: ${errorText}`);
               }
+
+              await log('DEBUG', "Successfully received response from Hugging Face Inference API", workDir);
+              const image = await response.blob();
               
               // Save the image (which is a Blob)
               // Detect the actual image format (JPEG or PNG)
@@ -191,7 +181,6 @@ export function registerToolHandlers(server, config, clients, notifyResourceList
                 modelClient,
                 imageFile,
                 imagePath,
-                // Removed processedImagePath parameter as it's set internally in the workflows
                 prompt,
                 operationId,
                 toolName: name,
@@ -255,9 +244,8 @@ export function registerToolHandlers(server, config, clients, notifyResourceList
           return initialResponse;
         } catch (error) {
           await log('ERROR', `Error starting operation ${operationId}: ${error.message}`, workDir);
-          await logOperation(name, operationId, 'ERROR', { error: error.message }, workDir);
           return {
-            content: [{ type: "text", text: `Error starting 3D asset generation: ${error.message}` }],
+            content: [{ type: "text", text: `Error: ${error.message}` }],
             isError: true
           };
         }
