@@ -2,6 +2,8 @@ import { promises as fs } from "fs";
 import path from "path";
 import { log } from "../logger.js";
 import { saveFileFromData } from "../utils.js";
+import sharp from "sharp";
+import crypto from "crypto";
 
 /**
  * Workflow for InstantMesh space
@@ -24,13 +26,19 @@ export async function processInstantMesh({
 }) {
   const { model3dSteps, model3dSeed, model3dRemoveBackground } = config;
   
+  // Convert the original image to PNG to ensure format consistency
+  await log('INFO', "Converting image to PNG for API compatibility", workDir);
+  const pngBuffer = await sharp(imageFile).png().toBuffer();
+  const mimeType = 'image/png';
+  const imageFilename = `input_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.png`;
+  
   // 2.1: Check if the image is valid
   await log('DEBUG', "Validating image for 3D conversion with InstantMesh...", workDir);
   await log('INFO', "Using InstantMesh space", workDir);
   
   const checkResult = await retryWithBackoff(async () => {
     return await modelClient.predict("/check_input_image", [
-      new File([imageFile], path.basename(imagePath), { type: "image/png" })
+      new File([pngBuffer], imageFilename, { type: mimeType })
     ]);
   }, operationId);
   
@@ -38,7 +46,7 @@ export async function processInstantMesh({
   await log('DEBUG', "Preprocessing image with InstantMesh...", workDir);
   const preprocessResult = await retryWithBackoff(async () => {
     return await modelClient.predict("/preprocess", [
-      new File([imageFile], path.basename(imagePath), { type: "image/png" }),
+      new File([pngBuffer], imageFilename, { type: mimeType }),
       model3dRemoveBackground // Use configured value
     ]);
   }, operationId);

@@ -2,6 +2,8 @@ import { promises as fs } from "fs";
 import path from "path";
 import { log } from "../logger.js";
 import { saveFileFromData } from "../utils.js";
+import sharp from "sharp";
+import crypto from "crypto";
 
 /**
  * Workflow for Hunyuan3D-2mini-Turbo space
@@ -34,32 +36,22 @@ export async function processHunyuan3dMiniTurbo({
   
   await log('INFO', "Using Hunyuan3D-2mini-Turbo space", workDir);
   
-  // Hunyuan3D-2mini-Turbo doesn't have a check_input_image endpoint, so we skip that step
-  await log('INFO', `Using Hunyuan3D-2mini-Turbo space - skipping image validation step`, workDir);
+  // Convert the original image to PNG to ensure format consistency
+  await log('INFO', "Converting image to PNG for API compatibility", workDir);
+  const pngBuffer = await sharp(imageFile).png().toBuffer();
+  const mimeType = 'image/png';
+  const imageFilename = `input_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.png`;
   
-  // Hunyuan3D-2mini-Turbo doesn't have a preprocess endpoint, but has built-in background removal
-  await log('INFO', `Using Hunyuan3D-2mini-Turbo space - using built-in background removal`, workDir);
-  
-  // Save the original image as the processed image
-  const processedResult = await saveFileFromData(
-    imageFile,
-    "3d_processed",
-    "png",
-    toolName,
-    assetsDir,
-    hfToken,
-    modelSpace,
-    workDir
-  );
-  const processedImagePath = processedResult.filePath;
-  await log('INFO', `Preprocessed image saved at: ${processedImagePath}`, workDir);
+  // Save the PNG image for reference
+  const pngImagePath = path.join(assetsDir, `3d_processed_${toolName}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.png`);
+  await fs.writeFile(pngImagePath, pngBuffer);
+  await log('INFO', `Converted image saved at: ${pngImagePath}`, workDir);
   
   // Notify clients that a new resource is available
   await notifyResourceListChanged();
   
   // Generate 3D model in one step with generation_all
   await log('DEBUG', "Generating 3D model with Hunyuan3D-2mini-Turbo...", workDir);
-  const processedImageFile = await fs.readFile(processedImagePath);
   
   // Determine default steps based on the selected mode
   let defaultSteps;
@@ -108,7 +100,7 @@ export async function processHunyuan3dMiniTurbo({
   const modelResult = await retryWithBackoff(async () => {
     return await modelClient.predict("/generation_all", [
       prompt, // caption
-      new File([processedImageFile], path.basename(processedImagePath), { type: "image/png" }),
+      new File([pngBuffer], imageFilename, { type: mimeType }),
       null, null, null, null, // Multi-view images (front, back, left, right)
       steps,
       guidanceScale,
