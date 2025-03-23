@@ -132,31 +132,25 @@ export function registerToolHandlers(server, config, clients, notifyResourceList
             try {
               const enhancedPrompt = `${prompt}, high detailed, complete object, not cut off, white solid background`;
               await log('DEBUG', `Enhanced 3D prompt: "${enhancedPrompt}"`, workDir);
-
-              // Use fetch instead of InferenceClient
-              await log('DEBUG', "Using fetch to call Hugging Face Inference API for 3D asset generation...", workDir);
-              const response = await fetch(
-                "https://router.huggingface.co/hf-inference/models/gokaygokay/Flux-Game-Assets-LoRA-v2",
-                {
-                  headers: {
-                    Authorization: `Bearer ${hfToken}`,
-                    "Content-Type": "application/json",
-                  },
-                  method: "POST",
-                  body: JSON.stringify({
-                    inputs: enhancedPrompt,
-                    parameters: { num_inference_steps: 50 }
-                  }),
-                }
-              );
-
-              if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error! Status: ${response.status}, Message: ${errorText}`);
+              
+              // Use InferenceClient with retry logic instead of direct fetch
+              await log('DEBUG', "Using InferenceClient with retry logic for 3D asset generation...", workDir);
+              
+              // Use textToImage with retry logic
+              const image = await retryWithBackoff(async () => {
+                return await inferenceClient.textToImage({
+                  model: "gokaygokay/Flux-Game-Assets-LoRA-v2",
+                  inputs: enhancedPrompt,
+                  parameters: { num_inference_steps: 30 }, // Reduced steps for faster processing
+                  provider: "hf-inference",
+                });
+              }, operationId, 3, 10000); // 3 retries, 10s initial delay
+              
+              if (!image) {
+                throw new Error("No image returned from 3D asset generation API");
               }
-
+              
               await log('DEBUG', "Successfully received response from Hugging Face Inference API", workDir);
-              const image = await response.blob();
               
               // Save the image (which is a Blob)
               // Detect the actual image format (JPEG or PNG)
