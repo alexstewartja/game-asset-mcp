@@ -632,18 +632,19 @@ async function detectSpaceType(client) {
       await log('DEBUG', `Fallback space detection result: INSTANTMESH (${SPACE_TYPE.INSTANTMESH})`);
       return SPACE_TYPE.INSTANTMESH;
     }
-    
     // If we get here, we couldn't determine the space type
-    // As a last resort, assume it's InstantMesh (the most common case)
-    await log('WARN', `Could not definitively determine space type. Defaulting to InstantMesh.`);
-    detectedSpaceType = SPACE_TYPE.INSTANTMESH;
-    return SPACE_TYPE.INSTANTMESH;
+    // This is a critical error - we should not proceed without knowing the space type
+    const errorMessage = `Could not determine space type after API analysis. Please ensure your MODEL_SPACE environment variable in .env file is set correctly according to .env.example. You must use one of the following options:
+1. A Hunyuan3D-2 space (containing "hunyuan" in the name)
+2. A Hunyuan3D-2mini-Turbo space (containing "hunyuan3d-2mini" in the name)
+3. An InstantMesh space (containing "instantmesh" in the name)`;
+    
+    await log('ERROR', errorMessage);
+    throw new Error(errorMessage);
   } catch (error) {
     await log('ERROR', `Error detecting space type: ${error.message}`);
-    // Default to InstantMesh instead of throwing an error
-    await log('WARN', `Defaulting to InstantMesh due to detection error.`);
-    detectedSpaceType = SPACE_TYPE.INSTANTMESH;
-    return SPACE_TYPE.INSTANTMESH;
+    // Rethrow the error instead of defaulting to InstantMesh
+    throw new Error(`Failed to detect space type: ${error.message}. Please check your MODEL_SPACE environment variable in .env file and ensure it follows the format specified in .env.example.`);
   }
 }
 // Authentication options for Gradio using HF token
@@ -901,7 +902,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       
       // Save the image (which is a Blob) and notify clients of resource change
-      const saveResult = await saveFileFromData(image, "2d_asset", "png", toolName);
+      // Detect the actual image format (JPEG or PNG)
+      const imageBuffer = await image.arrayBuffer();
+      const format = detectImageFormat(Buffer.from(imageBuffer));
+      const extension = format === "JPEG" ? "jpg" : "png";
+      
+      await log('DEBUG', `Detected 2D image format: ${format}, using extension: ${extension}`);
+      const saveResult = await saveFileFromData(image, "2d_asset", extension, toolName);
       await log('INFO', `2D asset saved at: ${saveResult.filePath}`);
       
       // Notify clients that a new resource is available
@@ -977,7 +984,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
             
             // Save the image (which is a Blob)
-            const saveResult = await saveFileFromData(image, "3d_image", "png", toolName);
+            // Detect the actual image format (JPEG or PNG)
+            const imageBuffer = await image.arrayBuffer();
+            const format = detectImageFormat(Buffer.from(imageBuffer));
+            const extension = format === "JPEG" ? "jpg" : "png";
+            
+            await log('DEBUG', `Detected 3D image format: ${format}, using extension: ${extension}`);
+            const saveResult = await saveFileFromData(image, "3d_image", extension, toolName);
             const imagePath = saveResult.filePath;
             await log('INFO', `3D image generated at: ${imagePath}`);
             await logOperation(toolName, operationId, 'PROCESSING', { step: 'Initial image generated', path: imagePath });
@@ -1200,11 +1213,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               // Use different endpoints based on the detected space type
               if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
                 return await modelClient.predict("/make3d", []);
-              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D || detectedSpaceType === SPACE_TYPE.HUNYUAN3D_MINI_TURBO) {
-                // Neither Hunyuan3D nor Hunyuan3D-2mini-Turbo need a separate make3d step
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
+                // Hunyuan3D-2 doesn't need a separate make3d step
                 // as generation_all already returns the 3D model
                 await log('INFO', `Using ${detectedSpaceType} space - 3D model already generated in previous step`);
                 // Return the result from the previous step
+                // For Hunyuan3D-2, the textured mesh URL is at result.data[1].url
+                await log('DEBUG', `Hunyuan3D-2: Extracting textured mesh from result.data[1].url`);
+                return mvsResult;
+              } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D_MINI_TURBO) {
+                // Hunyuan3D-2mini-Turbo doesn't need a separate make3d step
+                // as generation_all already returns the 3D model
+                await log('INFO', `Using ${detectedSpaceType} space - 3D model already generated in previous step`);
+                // Return the result from the previous step
+                // For Hunyuan3D-2mini-Turbo, the textured mesh URL is at result.data[1].value.url
+                await log('DEBUG', `Hunyuan3D-2mini-Turbo: Extracting textured mesh from result.data[1].value.url`);
                 return mvsResult;
               } else {
                 throw new Error("Unknown space type detected. Cannot proceed with 3D asset generation.");
@@ -1223,10 +1246,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const modelDebugPath = path.join(assetsDir, modelDebugFilename);
             await fs.writeFile(modelDebugPath, JSON.stringify(modelResult, null, 2));
             await log('DEBUG', `Model data saved as JSON at: ${modelDebugPath}`);
+            // Extract the model data based on the space type
+            let objModelData, glbModelData;
             
-            // The API returns both OBJ and GLB formats
-            const objModelData = modelResult.data[0];
-            const glbModelData = modelResult.data[1];
+            if (detectedSpaceType === SPACE_TYPE.INSTANTMESH) {
+              // InstantMesh returns both OBJ and GLB formats
+              objModelData = modelResult.data[0];
+              glbModelData = modelResult.data[1];
+              await log('DEBUG', `InstantMesh: Using modelResult.data[0] for OBJ and modelResult.data[1] for GLB`);
+            } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D) {
+              // For Hunyuan3D-2, we want the textured mesh which is at index 1
+              // We'll use it for both OBJ and GLB since we primarily want the textured version
+              objModelData = modelResult.data[1]; // Textured mesh
+              glbModelData = modelResult.data[1]; // Textured mesh
+              await log('DEBUG', `Hunyuan3D-2: Using textured mesh from modelResult.data[1] for both OBJ and GLB`);
+            } else if (detectedSpaceType === SPACE_TYPE.HUNYUAN3D_MINI_TURBO) {
+              // For Hunyuan3D-2mini-Turbo, the textured mesh is at index 1 but nested in value
+              // We need to ensure we're accessing it correctly
+              if (modelResult.data[1] && modelResult.data[1].value) {
+                objModelData = modelResult.data[1].value; // Textured mesh
+                glbModelData = modelResult.data[1].value; // Textured mesh
+                await log('DEBUG', `Hunyuan3D-2mini-Turbo: Using textured mesh from modelResult.data[1].value for both OBJ and GLB`);
+              } else {
+                // Fallback to white mesh if textured mesh is not available
+                objModelData = modelResult.data[0];
+                glbModelData = modelResult.data[0];
+                await log('WARN', `Hunyuan3D-2mini-Turbo: Textured mesh not found, falling back to white mesh`);
+              }
+            } else {
+              throw new Error(`Unknown space type: ${detectedSpaceType}`);
+            }
             
             // Save both model formats
             // Save both model formats
@@ -1369,6 +1418,26 @@ function getMimeType(filename) {
   if (filename.endsWith(".obj")) return "model/obj";
   if (filename.endsWith(".glb")) return "model/gltf-binary";
   return "application/octet-stream"; // Default
+}
+
+// Helper to detect image format from buffer
+function detectImageFormat(buffer) {
+  if (!buffer || buffer.length < 4) {
+    return "Unknown";
+  }
+  
+  // Check for JPEG
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+    return "JPEG";
+  }
+  
+  // Check for PNG
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+    return "PNG";
+  }
+  
+  // Default to PNG if unknown
+  return "PNG";
 }
 
 // Helper to save files from URL
