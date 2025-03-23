@@ -13,7 +13,6 @@ import { log } from "./logger.js";
 import { createServer } from "./mcpServer.js";
 import { checkRateLimit } from "./utils.js";
 import { initializeClients } from "./clients.js";
-import { checkRateLimit } from "./utils.js";
 
 // Initialize global operation updates
 global.operationUpdates = {};

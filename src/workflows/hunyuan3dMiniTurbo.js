@@ -57,7 +57,7 @@ export async function processHunyuan3dMiniTurbo({
   // Notify clients that a new resource is available
   await notifyResourceListChanged();
   
-  // Generate multi-views and 3D model in one step with generation_all
+  // Generate 3D model in one step with generation_all
   await log('DEBUG', "Generating 3D model with Hunyuan3D-2mini-Turbo...", workDir);
   const processedImageFile = await fs.readFile(processedImagePath);
   
@@ -131,39 +131,32 @@ export async function processHunyuan3dMiniTurbo({
   await fs.writeFile(modelDebugFilename, JSON.stringify(modelResult, null, 2));
   await log('DEBUG', `Model data saved as JSON at: ${modelDebugFilename}`, workDir);
   
-  // Save the multi-view image if available
-  if (modelResult.data[0]) {
-    const mvsResult = await saveFileFromData(
-      modelResult.data[0],
-      "3d_multiview",
-      "png",
-      toolName,
-      assetsDir,
-      hfToken,
-      modelSpace,
-      workDir
-    );
-    const mvsImagePath = mvsResult.filePath;
-    await log('INFO', `Multi-view image saved at: ${mvsImagePath}`, workDir);
-    
-    // Notify clients that a new resource is available
-    await notifyResourceListChanged();
-  }
+  // According to ground_truth.md, Hunyuan3D-2mini-Turbo returns:
+  // 1. White Mesh (File): result.data[0].value.url
+  // 2. Textured Mesh (File): result.data[1].value.url
+  // 3. HTML Output: result.data[2]
+  // 4. Model Information (JSON): result.data[3]
+  // 5. Seed Value (Number): result.data[4]
   
-  // Extract the model data
+  // Declare variables outside the if/else block for proper scope
   let objModelData, glbModelData;
   
-  // For Hunyuan3D-2mini-Turbo, the textured mesh is at index 1 but nested in value
-  // We need to ensure we're accessing it correctly
-  if (modelResult.data[1] && modelResult.data[1].value) {
+  // For Hunyuan3D-2mini-Turbo, the textured mesh URL is at result.data[1].value.url
+  if (!modelResult.data[1] || !modelResult.data[1].value || !modelResult.data[1].value.url) {
+    await log('WARN', `Textured mesh not found in result.data[1].value.url, falling back to white mesh`, workDir);
+    // Fallback to white mesh if textured mesh is not available
+    if (!modelResult.data[0] || !modelResult.data[0].value || !modelResult.data[0].value.url) {
+      throw new Error("No valid mesh found in the response");
+    }
+    // Use white mesh for both OBJ and GLB
+    objModelData = modelResult.data[0].value;
+    glbModelData = modelResult.data[0].value;
+    await log('DEBUG', `Hunyuan3D-2mini-Turbo: Using white mesh from modelResult.data[0].value for both OBJ and GLB`, workDir);
+  } else {
+    // Use textured mesh for both OBJ and GLB
     objModelData = modelResult.data[1].value; // Textured mesh
     glbModelData = modelResult.data[1].value; // Textured mesh
     await log('DEBUG', `Hunyuan3D-2mini-Turbo: Using textured mesh from modelResult.data[1].value for both OBJ and GLB`, workDir);
-  } else {
-    // Fallback to white mesh if textured mesh is not available
-    objModelData = modelResult.data[0];
-    glbModelData = modelResult.data[0];
-    await log('WARN', `Hunyuan3D-2mini-Turbo: Textured mesh not found, falling back to white mesh`, workDir);
   }
   
   // Save both model formats and notify clients of resource changes
