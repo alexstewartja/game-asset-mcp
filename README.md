@@ -326,3 +326,5 @@ Please follow standard coding conventions and include tests where applicable.
 ## License
 
 This project is licensed under the **MIT License**. See the `LICENSE` file in the repository for full details.
+
+RELEASE
