@@ -24,12 +24,14 @@ export async function processHunyuan3d({
   retryWithBackoff,
   notifyResourceListChanged
 }) {
-  const { 
-    model3dSteps, 
-    model3dGuidanceScale, 
-    model3dSeed, 
-    model3dOctreeResolution, 
-    model3dRemoveBackground 
+  const {
+    model3dSteps,
+    model3dGuidanceScale,
+    model3dSeed,
+    model3dOctreeResolution,
+    model3dRemoveBackground,
+    // Note: model3dTurboMode is not used in Hunyuan3D-2 space
+    // It's only applicable to Hunyuan3D-2mini-Turbo space
   } = config;
   
   await log('INFO', "Using Hunyuan3D-2 space", workDir);

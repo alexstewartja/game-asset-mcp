@@ -24,7 +24,13 @@ export async function processInstantMesh({
   retryWithBackoff,
   notifyResourceListChanged
 }) {
-  const { model3dSteps, model3dSeed, model3dRemoveBackground } = config;
+  const {
+    model3dSteps,
+    model3dSeed,
+    model3dRemoveBackground
+    // Note: model3dTurboMode is not used in InstantMesh space
+    // It's only applicable to Hunyuan3D-2mini-Turbo space
+  } = config;
   
   // Convert the original image to PNG to ensure format consistency
   await log('INFO', "Converting image to PNG for API compatibility", workDir);
