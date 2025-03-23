@@ -3,13 +3,13 @@ import path from "path";
 import { log } from "../logger.js";
 import { saveFileFromData } from "../utils.js";
 import sharp from "sharp";
+import crypto from "crypto";
 
 function validateAssetsDir(assetsDir) {
   if (!assetsDir || typeof assetsDir !== "string") {
     throw new Error("assetsDir must be a defined string");
   }
 }
-import crypto from "crypto";
 
 export async function processHunyuan3dMiniTurbo({
   modelClient,
