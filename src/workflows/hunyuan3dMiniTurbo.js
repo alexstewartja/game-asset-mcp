@@ -10,7 +10,7 @@ export async function processHunyuan3dMiniTurbo({
   modelClient,
   imageFile,
   imagePath,
-  processedImagePath,
+  // Removed processedImagePath as it's set internally
   prompt,
   operationId,
   toolName,

@@ -272,7 +272,9 @@ export function getMimeType(filename) {
 }
 
 // Simple rate limiting
-export function checkRateLimit(clientId, limit = 10, windowMs = 60000, rateLimits = new Map()) {
+const rateLimits = new Map(); // Internal module state for rate limiting
+
+export function checkRateLimit(clientId, limit = 10, windowMs = 60000) {
   const now = Date.now();
   const clientKey = clientId || 'default';
   

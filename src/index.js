@@ -11,6 +11,7 @@ import { z } from "zod";
 import { loadConfig } from "./config.js";
 import { log } from "./logger.js";
 import { createServer } from "./mcpServer.js";
+import { checkRateLimit } from "./utils.js";
 import { initializeClients } from "./clients.js";
 import { checkRateLimit } from "./utils.js";
 
@@ -34,8 +35,7 @@ async function main() {
       // Store transports by client ID for multi-connection support
       global.transports = new Map();
       
-      // Simple rate limiting
-      const rateLimits = new Map();
+      // Rate limiting is now handled internally in utils.js
       
       // Add health check endpoint
       app.get("/health", (req, res) => {
@@ -74,12 +74,12 @@ async function main() {
 
       app.post("/messages", express.json(), async (req, res) => {
         const clientId = req.headers['x-client-id'] || 'anonymous';
-        
         // Apply rate limiting
-        if (!checkRateLimit(clientId, 10, 60000, rateLimits)) {
+        if (!checkRateLimit(clientId, 10, 60000)) {
           res.status(429).json({ error: "Too many requests" });
           return;
         }
+        
         
         // Get the transport for this client
         const transport = global.transports.get(clientId);

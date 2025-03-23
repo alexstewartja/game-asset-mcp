@@ -191,7 +191,7 @@ export function registerToolHandlers(server, config, clients, notifyResourceList
                 modelClient,
                 imageFile,
                 imagePath,
-                processedImagePath: null, // Will be created by the workflow
+                // Removed processedImagePath parameter as it's set internally in the workflows
                 prompt,
                 operationId,
                 toolName: name,
