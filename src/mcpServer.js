@@ -7,7 +7,7 @@ import { log } from "./logger.js";
 
 export async function createServer(config, clients) {
   const server = new Server(
-    { name: "game-asset-generator", version: "0.3.0" }, // Updated to version 0.3.0 with Hunyuan3D-2mini-Turbo support
+    { name: "game-asset-generator", version: "0.2.1" }, // Updated to version 0.2.1 with Hunyuan3D-2mini-Turbo support
     {
       capabilities: {
         tools: { list: true, call: true },
